@@ -1,0 +1,679 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>学会タイムテーブル作成ツール</title>
+<style>
+  :root{
+    --ink:#1e293b;
+    --ink-soft:#64748b;
+    --ink-faint:#94a3b8;
+    --paper:#ffffff;
+    --panel:#f8fafc;
+    --panel-2:#f1f5f9;
+    --border:#e2e8f0;
+    --border-strong:#cbd5e1;
+    --accent:#4f46e5;
+    --accent-soft:#eef2ff;
+    --talk:#64748b;
+    --lunch:#f59e0b;   --lunch-bg:#fffbeb;
+    --break:#10b981;   --break-bg:#ecfdf5;
+    --custom:#6366f1;  --custom-bg:#eef2ff;
+    --gap:#cbd5e1;
+    --danger:#dc2626;
+    --mono:ui-monospace,"SF Mono","SFMono-Regular",Menlo,Consolas,"Liberation Mono",monospace;
+    --sans:system-ui,-apple-system,"Hiragino Kaku Gothic ProN","Hiragino Sans","Noto Sans JP","Yu Gothic",sans-serif;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  body{
+    font-family:var(--sans);
+    color:var(--ink);
+    background:var(--panel-2);
+    line-height:1.55;
+    font-size:14px;
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:1180px;margin:0 auto;padding:28px 20px 80px}
+
+  header.masthead{
+    display:flex;align-items:flex-end;justify-content:space-between;
+    gap:16px;flex-wrap:wrap;
+    padding-bottom:18px;margin-bottom:24px;
+    border-bottom:2px solid var(--ink);
+  }
+  .masthead h1{
+    margin:0;font-size:22px;font-weight:700;letter-spacing:.01em;
+    display:flex;align-items:baseline;gap:12px;
+  }
+  .masthead h1 .en{
+    font-family:var(--mono);font-size:12px;font-weight:500;letter-spacing:.14em;
+    color:var(--ink-faint);text-transform:uppercase;
+  }
+  .masthead .summary{
+    font-family:var(--mono);font-size:12px;color:var(--ink-soft);
+    display:flex;gap:18px;
+  }
+  .masthead .summary b{color:var(--ink);font-weight:600}
+
+  .layout{display:grid;grid-template-columns:340px 1fr;gap:24px;align-items:start}
+  @media (max-width:920px){ .layout{grid-template-columns:1fr} }
+
+  .panel{
+    background:var(--paper);border:1px solid var(--border);border-radius:12px;
+    padding:18px 18px 20px;
+  }
+  .panel + .panel{margin-top:18px}
+  .panel h2{
+    margin:0 0 14px;font-size:12px;font-weight:700;letter-spacing:.12em;
+    text-transform:uppercase;color:var(--ink-soft);
+    display:flex;align-items:center;gap:8px;
+  }
+  .panel h2::before{content:"";width:10px;height:10px;border-radius:2px;background:var(--accent)}
+
+  .field{margin-bottom:13px}
+  .field:last-child{margin-bottom:0}
+  .field label{display:block;font-size:12px;font-weight:600;color:var(--ink-soft);margin-bottom:5px}
+  .row2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  input[type=time],input[type=number],input[type=text],select{
+    width:100%;font-family:inherit;font-size:14px;color:var(--ink);
+    background:var(--paper);border:1px solid var(--border-strong);border-radius:7px;
+    padding:8px 9px;transition:border-color .12s,box-shadow .12s;
+  }
+  input[type=time],input[type=number]{font-family:var(--mono)}
+  input:focus,select:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+  .inline-check{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600;color:var(--ink);cursor:pointer}
+  .inline-check input{width:16px;height:16px;accent-color:var(--accent);cursor:pointer}
+
+  .slots{display:flex;flex-direction:column;gap:9px}
+  .slot-row{
+    display:grid;grid-template-columns:1fr 1fr auto;gap:8px;align-items:center;
+    padding:10px;border:1px solid var(--border);border-radius:9px;background:var(--panel);
+  }
+  .slot-row .times{display:grid;grid-template-columns:1fr 1fr;gap:6px;grid-column:1/3}
+  .slot-row .name{grid-column:1/2}
+  .slot-row .type{grid-column:2/3}
+  .slot-row .kill{grid-column:3/4;grid-row:1/3;align-self:stretch}
+  .slot-empty{font-size:12px;color:var(--ink-faint);text-align:center;padding:6px 0}
+
+  button{font-family:inherit;cursor:pointer;border:none;border-radius:7px;font-weight:600;transition:background .12s,border-color .12s,color .12s}
+  .btn{padding:9px 14px;font-size:13px;background:var(--accent);color:#fff}
+  .btn:hover{background:#4338ca}
+  .btn.ghost{background:var(--paper);color:var(--ink);border:1px solid var(--border-strong)}
+  .btn.ghost:hover{background:var(--panel);border-color:var(--ink-faint)}
+  .btn.block{width:100%;justify-content:center}
+  .btn.small{padding:7px 11px;font-size:12px}
+  .kill{background:transparent;color:var(--ink-faint);border:1px solid var(--border);padding:0 10px;font-size:16px;line-height:1;height:100%;min-height:34px}
+  .kill:hover{background:#fef2f2;color:var(--danger);border-color:#fecaca}
+
+  .toolbar{display:flex;gap:9px;flex-wrap:wrap;margin-bottom:16px}
+
+  /* ---- Timetable ---- */
+  .board{background:var(--paper);border:1px solid var(--border);border-radius:12px;overflow:hidden}
+  .board-head{
+    display:flex;align-items:center;justify-content:space-between;
+    padding:14px 18px;border-bottom:1px solid var(--border);
+  }
+  .board-head .ttl{font-size:13px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-soft)}
+  .legend{display:flex;gap:14px;font-size:11px;color:var(--ink-soft)}
+  .legend span{display:inline-flex;align-items:center;gap:5px}
+  .legend i{width:9px;height:9px;border-radius:2px;display:inline-block}
+
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  thead th{
+    font-size:10.5px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;
+    color:var(--ink-faint);text-align:left;padding:9px 12px;border-bottom:1px solid var(--border);
+    background:var(--panel);
+  }
+  tbody td{padding:0;border-bottom:1px solid var(--border);vertical-align:middle}
+  tbody tr:last-child td{border-bottom:none}
+  .cell{padding:11px 12px}
+
+  .c-time{width:118px;white-space:nowrap}
+  .time-range{font-family:var(--mono);font-size:13px;font-weight:600;color:var(--ink);display:flex;align-items:center;gap:7px}
+  .chip{width:4px;align-self:stretch;min-height:26px;border-radius:3px;background:var(--talk);flex:0 0 auto}
+  .time-range .rng{display:flex;flex-direction:column;line-height:1.35}
+  .time-range .rng small{font-size:10px;color:var(--ink-faint);font-weight:500}
+
+  .c-kind{width:78px}
+  .badge{display:inline-block;font-size:11px;font-weight:700;padding:3px 9px;border-radius:20px;letter-spacing:.02em}
+  .badge.talk{background:var(--panel-2);color:var(--ink-soft)}
+  .badge.lunch{background:var(--lunch-bg);color:#b45309}
+  .badge.break{background:var(--break-bg);color:#047857}
+  .badge.custom{background:var(--custom-bg);color:#4338ca}
+
+  .c-dur{width:70px;font-family:var(--mono);color:var(--ink-soft);font-size:12px;text-align:right}
+
+  tr.row-lunch{background:var(--lunch-bg)}
+  tr.row-lunch .chip{background:var(--lunch)}
+  tr.row-break{background:var(--break-bg)}
+  tr.row-break .chip{background:var(--break)}
+  tr.row-custom{background:var(--custom-bg)}
+  tr.row-custom .chip{background:var(--custom)}
+  tr.row-gap{background:repeating-linear-gradient(45deg,#fff,#fff 7px,#f8fafc 7px,#f8fafc 14px)}
+  tr.row-gap .chip{background:var(--gap)}
+  tr.row-gap td{color:var(--ink-faint)}
+
+  .title-in{
+    width:100%;border:1px solid transparent;background:transparent;border-radius:6px;
+    padding:6px 8px;font-size:14px;font-weight:600;color:var(--ink);
+  }
+  .title-in::placeholder{color:var(--ink-faint);font-weight:400}
+  .title-in:hover{border-color:var(--border)}
+  .title-in:focus{outline:none;border-color:var(--accent);background:var(--paper);box-shadow:0 0 0 3px var(--accent-soft)}
+  .sub-in{
+    width:100%;border:1px solid transparent;background:transparent;border-radius:6px;
+    padding:3px 8px;font-size:12px;color:var(--ink-soft);margin-top:1px;
+  }
+  .sub-in::placeholder{color:var(--ink-faint)}
+  .sub-in:hover{border-color:var(--border)}
+  .sub-in:focus{outline:none;border-color:var(--accent);background:var(--paper);box-shadow:0 0 0 3px var(--accent-soft)}
+  .fixed-label{font-size:14px;font-weight:600;color:var(--ink);padding:6px 8px}
+
+  .empty-board{padding:48px 20px;text-align:center;color:var(--ink-faint)}
+  .empty-board b{display:block;color:var(--ink-soft);margin-bottom:4px;font-size:15px}
+
+  .notice{
+    margin-bottom:16px;padding:11px 14px;border-radius:9px;font-size:13px;
+    display:none;align-items:flex-start;gap:9px;
+  }
+  .notice.show{display:flex}
+  .notice.warn{background:#fffbeb;border:1px solid #fde68a;color:#92400e}
+  .notice.ok{background:#ecfdf5;border:1px solid #a7f3d0;color:#065f46}
+  .notice.err{background:#fef2f2;border:1px solid #fecaca;color:#991b1b}
+  .notice ul{margin:4px 0 0;padding-left:18px}
+
+  .hint{font-size:11px;color:var(--ink-faint);margin-top:6px;line-height:1.45}
+
+  /* ---- Print ---- */
+  @media print{
+    body{background:#fff;font-size:11px}
+    .wrap{max-width:none;padding:0}
+    .layout{display:block}
+    .side,.toolbar,.board-head .legend,.notice,.hint,.kill,.title-in,.sub-in{}
+    .side,.toolbar{display:none !important}
+    .masthead{border-color:#000}
+    .masthead .summary{display:none}
+    .board{border:none;border-radius:0}
+    .title-in,.sub-in{border:none;box-shadow:none;padding:2px 0}
+    tbody td,thead th{border-color:#000}
+    tr.row-gap{display:none}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="masthead">
+    <h1>タイムテーブル作成 <span class="en">Program Builder</span></h1>
+    <div class="summary" id="summary"></div>
+  </header>
+
+  <div class="layout">
+
+    <!-- ============ SIDE: SETTINGS ============ -->
+    <div class="side">
+      <div class="panel">
+        <h2>基本設定</h2>
+        <div class="row2">
+          <div class="field">
+            <label for="s-start">開始時刻</label>
+            <input type="time" id="s-start" value="09:00">
+          </div>
+          <div class="field">
+            <label for="s-end">終了時刻</label>
+            <input type="time" id="s-end" value="17:00">
+          </div>
+        </div>
+        <div class="row2">
+          <div class="field">
+            <label for="s-talk">発表時間（分）</label>
+            <input type="number" id="s-talk" min="1" step="1" value="12">
+          </div>
+          <div class="field">
+            <label for="s-qa">質疑応答（分）</label>
+            <input type="number" id="s-qa" min="0" step="1" value="3">
+          </div>
+        </div>
+        <div class="hint">1コマ = 発表 + 質疑。開始から順に自動で埋め、固定枠の前で区切ります。</div>
+      </div>
+
+      <div class="panel">
+        <h2>ランチ</h2>
+        <label class="inline-check" style="margin-bottom:12px">
+          <input type="checkbox" id="s-lunch-on" checked> ランチ枠を設ける
+        </label>
+        <div class="row2">
+          <div class="field">
+            <label for="s-lunch-start">開始</label>
+            <input type="time" id="s-lunch-start" value="12:00">
+          </div>
+          <div class="field">
+            <label for="s-lunch-end">終了</label>
+            <input type="time" id="s-lunch-end" value="13:00">
+          </div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h2>特別枠 / 休憩</h2>
+        <div class="slots" id="slots"></div>
+        <button class="btn ghost block small" id="add-slot" style="margin-top:11px">＋ 枠を追加</button>
+        <div class="hint">休憩・基調講演・ポスター・授賞式など、発表以外の時間帯を自由に定義できます。</div>
+      </div>
+
+      <div class="panel">
+        <h2>表示</h2>
+        <label class="inline-check">
+          <input type="checkbox" id="s-showgap" checked> 空き時間を表示
+        </label>
+      </div>
+    </div>
+
+    <!-- ============ MAIN: TIMETABLE ============ -->
+    <div class="main">
+      <div class="toolbar">
+        <button class="btn" id="regen">設定から再生成</button>
+        <button class="btn ghost" id="export">CSVエクスポート</button>
+        <button class="btn ghost" id="import">CSVインポート</button>
+        <button class="btn ghost" id="print">印刷 / PDF</button>
+        <input type="file" id="file" accept=".csv,text/csv" hidden>
+      </div>
+
+      <div class="notice" id="notice"></div>
+
+      <div class="board">
+        <div class="board-head">
+          <span class="ttl">Timetable</span>
+          <div class="legend">
+            <span><i style="background:var(--talk)"></i>発表</span>
+            <span><i style="background:var(--lunch)"></i>ランチ</span>
+            <span><i style="background:var(--break)"></i>休憩</span>
+            <span><i style="background:var(--custom)"></i>特別</span>
+          </div>
+        </div>
+        <div id="board-body"></div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+"use strict";
+
+/* ---------------- state ---------------- */
+let customSlots = [
+  { id: uid(), start: "15:00", end: "15:15", label: "休憩", type: "break" }
+];
+let talkData = [];   // per-talk content, preserved across regen: {title,speaker}
+let items = [];      // rendered rows
+
+/* ---------------- helpers ---------------- */
+function uid(){ return Math.random().toString(36).slice(2,9); }
+function toMin(t){
+  if(!t) return null;
+  const m=/^(\d{1,2}):(\d{2})$/.exec(String(t).trim());
+  if(!m) return null;
+  const h=+m[1], mi=+m[2];
+  if(h>23||mi>59) return null;
+  return h*60+mi;
+}
+function toStr(min){
+  if(min==null||isNaN(min)) return "";
+  min=Math.round(min);
+  const h=Math.floor(min/60), m=((min%60)+60)%60;
+  return String(h).padStart(2,"0")+":"+String(m).padStart(2,"0");
+}
+const $ = s => document.querySelector(s);
+
+function readSettings(){
+  return {
+    start: $("#s-start").value,
+    end: $("#s-end").value,
+    talkMin: parseInt($("#s-talk").value,10)||0,
+    qaMin: parseInt($("#s-qa").value,10)||0,
+    lunchOn: $("#s-lunch-on").checked,
+    lunchStart: $("#s-lunch-start").value,
+    lunchEnd: $("#s-lunch-end").value,
+    showGap: $("#s-showgap").checked
+  };
+}
+
+/* ---------------- generation ---------------- */
+function generate(){
+  const s = readSettings();
+  const start = toMin(s.start), end = toMin(s.end);
+  const warnings = [];
+
+  if(start==null || end==null){ renderNotice(["開始時刻・終了時刻を正しく入力してください。"],"err"); items=[]; render(); return; }
+  if(end<=start) warnings.push("終了時刻が開始時刻以前になっています。");
+
+  const slotLen = s.talkMin + s.qaMin;
+  if(slotLen<=0) warnings.push("発表時間＋質疑応答が0分です。発表コマを生成できません。");
+
+  // collect fixed slots
+  let fixed = [];
+  if(s.lunchOn){
+    const ls=toMin(s.lunchStart), le=toMin(s.lunchEnd);
+    if(ls!=null&&le!=null&&le>ls) fixed.push({type:"lunch",start:ls,end:le,label:"ランチ"});
+    else warnings.push("ランチの時刻が不正です（開始<終了で指定してください）。");
+  }
+  customSlots.forEach(c=>{
+    const cs=toMin(c.start), ce=toMin(c.end);
+    if(cs!=null&&ce!=null&&ce>cs) fixed.push({type:c.type,start:cs,end:ce,label:c.label||"（無題）"});
+    else if(c.start||c.end||c.label) warnings.push(`特別枠「${c.label||"無題"}」の時刻が不正です。`);
+  });
+  fixed.sort((a,b)=>a.start-b.start || a.end-b.end);
+
+  // detect overlaps among fixed
+  for(let i=1;i<fixed.length;i++){
+    if(fixed[i].start<fixed[i-1].end)
+      warnings.push(`固定枠が重複しています（${toStr(fixed[i-1].start)}–${toStr(fixed[i-1].end)} と ${toStr(fixed[i].start)}–${toStr(fixed[i].end)}）。`);
+  }
+
+  const out = [];
+  let cursor = start;
+  let talkIdx = 0;
+
+  function fill(from,to){
+    if(slotLen>0){
+      while(from+slotLen<=to){
+        const meta = talkData[talkIdx] || {};
+        out.push({type:"talk",start:from,end:from+slotLen,
+                  title:meta.title||"",speaker:meta.speaker||"",talkIndex:talkIdx});
+        from+=slotLen; talkIdx++;
+      }
+    }
+    if(s.showGap && to-from>=1) out.push({type:"gap",start:from,end:to});
+    return from;
+  }
+
+  for(const f of fixed){
+    if(f.start>cursor) fill(cursor,f.start);
+    out.push(Object.assign({},f));
+    cursor = Math.max(cursor, f.end);
+  }
+  if(end>cursor) fill(cursor,end);
+
+  // trim preserved talk content to actual count
+  talkData.length = talkIdx;
+
+  items = out;
+  renderNotice(warnings, warnings.length?"warn":"");
+  render();
+}
+
+/* ---------------- rendering ---------------- */
+const KIND = {
+  talk:  {label:"発表",  cls:"talk"},
+  lunch: {label:"ランチ", cls:"lunch"},
+  break: {label:"休憩",  cls:"break"},
+  custom:{label:"特別",  cls:"custom"}
+};
+
+function render(){
+  const body = $("#board-body");
+
+  const talks = items.filter(i=>i.type==="talk").length;
+  const total = items.length ? items[items.length-1].end - items[0].start : 0;
+  $("#summary").innerHTML =
+    `<span>発表 <b>${talks}</b> 件</span>` +
+    `<span>枠 <b>${items.filter(i=>i.type!=="gap"&&i.type!=="talk").length}</b> 件</span>` +
+    (total>0?`<span>会期 <b>${Math.floor(total/60)}h${String(total%60).padStart(2,"0")}m</b></span>`:"");
+
+  if(!items.length){
+    body.innerHTML = `<div class="empty-board"><b>タイムテーブルが空です</b>設定を入力して「設定から再生成」を押してください。</div>`;
+    return;
+  }
+
+  let rows = "";
+  for(let idx=0; idx<items.length; idx++){
+    const it = items[idx];
+    const dur = it.end - it.start;
+
+    if(it.type==="talk"){
+      rows += `<tr data-idx="${idx}">
+        <td class="c-time"><div class="cell"><div class="time-range">
+          <span class="chip"></span>
+          <span class="rng">${toStr(it.start)}<small>– ${toStr(it.end)}</small></span>
+        </div></div></td>
+        <td class="c-kind"><div class="cell"><span class="badge talk">発表</span></div></td>
+        <td><div class="cell" style="padding:7px 10px">
+          <input class="title-in" data-field="title" data-idx="${idx}" placeholder="発表タイトル（${it.talkIndex+1}）" value="${esc(it.title)}">
+          <input class="sub-in" data-field="speaker" data-idx="${idx}" placeholder="発表者 / 所属" value="${esc(it.speaker)}">
+        </div></td>
+        <td class="c-dur"><div class="cell">${dur}分</div></td>
+      </tr>`;
+    } else if(it.type==="gap"){
+      rows += `<tr class="row-gap">
+        <td class="c-time"><div class="cell"><div class="time-range">
+          <span class="chip"></span>
+          <span class="rng">${toStr(it.start)}<small>– ${toStr(it.end)}</small></span>
+        </div></div></td>
+        <td class="c-kind"><div class="cell"></div></td>
+        <td><div class="cell fixed-label" style="font-weight:400;font-style:italic;color:var(--ink-faint)">空き時間</div></td>
+        <td class="c-dur"><div class="cell">${dur}分</div></td>
+      </tr>`;
+    } else {
+      const k = KIND[it.type] || KIND.custom;
+      rows += `<tr class="row-${it.type}">
+        <td class="c-time"><div class="cell"><div class="time-range">
+          <span class="chip"></span>
+          <span class="rng">${toStr(it.start)}<small>– ${toStr(it.end)}</small></span>
+        </div></div></td>
+        <td class="c-kind"><div class="cell"><span class="badge ${k.cls}">${k.label}</span></div></td>
+        <td><div class="cell fixed-label">${esc(it.label)}</div></td>
+        <td class="c-dur"><div class="cell">${dur}分</div></td>
+      </tr>`;
+    }
+  }
+
+  body.innerHTML = `<table>
+    <thead><tr>
+      <th>時刻</th><th>種別</th><th>内容</th><th style="text-align:right">時間</th>
+    </tr></thead>
+    <tbody>${rows}</tbody>
+  </table>`;
+}
+
+function esc(s){ return String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
+
+function renderNotice(msgs, type){
+  const n = $("#notice");
+  if(!msgs || !msgs.length){ n.className="notice"; n.innerHTML=""; return; }
+  const icon = type==="ok"?"✓":type==="err"?"✕":"！";
+  n.className = "notice show "+(type||"warn");
+  n.innerHTML = `<span style="font-weight:700">${icon}</span><div>${
+    msgs.length===1 ? esc(msgs[0]) : "<ul>"+msgs.map(m=>`<li>${esc(m)}</li>`).join("")+"</ul>"
+  }</div>`;
+}
+
+/* ---------------- slots editor ---------------- */
+function renderSlots(){
+  const box = $("#slots");
+  if(!customSlots.length){
+    box.innerHTML = `<div class="slot-empty">枠はまだありません</div>`;
+    return;
+  }
+  box.innerHTML = customSlots.map(c=>`
+    <div class="slot-row" data-id="${c.id}">
+      <div class="times">
+        <input type="time" data-k="start" value="${c.start||""}">
+        <input type="time" data-k="end" value="${c.end||""}">
+      </div>
+      <input class="name" type="text" data-k="label" placeholder="名称（休憩・基調講演 等）" value="${esc(c.label)}">
+      <select class="type" data-k="type">
+        <option value="break" ${c.type==="break"?"selected":""}>休憩</option>
+        <option value="custom" ${c.type==="custom"?"selected":""}>特別</option>
+      </select>
+      <button class="kill" data-del="${c.id}" title="削除">×</button>
+    </div>`).join("");
+}
+
+/* ---------------- CSV ---------------- */
+function csvCell(v){
+  v = v==null ? "" : String(v);
+  return /[",\n\r]/.test(v) ? '"'+v.replace(/"/g,'""')+'"' : v;
+}
+function exportCSV(){
+  const header = ["開始時刻","終了時刻","種別","タイトル","発表者"];
+  const lines = [header.map(csvCell).join(",")];
+  for(const it of items){
+    if(it.type==="gap") continue;
+    const kind = (KIND[it.type]||{}).label || "特別";
+    const title = it.type==="talk" ? it.title : it.label;
+    const speaker = it.type==="talk" ? it.speaker : "";
+    lines.push([toStr(it.start),toStr(it.end),kind,title||"",speaker||""].map(csvCell).join(","));
+  }
+  const blob = new Blob(["\uFEFF"+lines.join("\r\n")], {type:"text/csv;charset=utf-8"});
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "timetable.csv";
+  a.click();
+  URL.revokeObjectURL(a.href);
+  renderNotice(["CSVをエクスポートしました。"],"ok");
+}
+
+function parseCSV(text){
+  text = text.replace(/^\uFEFF/,"");
+  const rows=[]; let row=[]; let cur=""; let q=false;
+  for(let i=0;i<text.length;i++){
+    const ch=text[i];
+    if(q){
+      if(ch==='"'){ if(text[i+1]==='"'){cur+='"';i++;} else q=false; }
+      else cur+=ch;
+    } else {
+      if(ch==='"') q=true;
+      else if(ch===","){ row.push(cur); cur=""; }
+      else if(ch==="\n"){ row.push(cur); rows.push(row); row=[]; cur=""; }
+      else if(ch==="\r"){ /* skip */ }
+      else cur+=ch;
+    }
+  }
+  if(cur!==""||row.length){ row.push(cur); rows.push(row); }
+  return rows.filter(r=>r.some(c=>c.trim()!==""));
+}
+
+const KIND_FROM = {"発表":"talk","ランチ":"lunch","昼食":"lunch","休憩":"break","特別":"custom"};
+
+function importCSV(text){
+  let rows = parseCSV(text);
+  if(!rows.length){ renderNotice(["CSVが空です。"],"err"); return; }
+
+  // drop header if present
+  const first = rows[0].map(c=>c.trim());
+  if(/開始/.test(first[0]) || /start/i.test(first[0])) rows = rows.slice(1);
+
+  const newItems = [];
+  const newTalk = [];
+  const newCustom = [];
+  let lunchOn=false, lunchS="", lunchE="";
+  let talkDurs = [];
+
+  for(const r of rows){
+    const start=toMin((r[0]||"").trim());
+    const end=toMin((r[1]||"").trim());
+    if(start==null||end==null) continue;
+    const kindRaw=(r[2]||"").trim();
+    const type = KIND_FROM[kindRaw] || "custom";
+    const title=(r[3]||"").trim();
+    const speaker=(r[4]||"").trim();
+
+    if(type==="talk"){
+      newItems.push({type:"talk",start,end,title,speaker,talkIndex:newTalk.length});
+      newTalk.push({title,speaker});
+      talkDurs.push(end-start);
+    } else if(type==="lunch"){
+      newItems.push({type:"lunch",start,end,label:title||"ランチ"});
+      lunchOn=true; lunchS=toStr(start); lunchE=toStr(end);
+    } else {
+      newItems.push({type,start,end,label:title||(type==="break"?"休憩":"特別")});
+      newCustom.push({id:uid(),start:toStr(start),end:toStr(end),label:title||(type==="break"?"休憩":"特別"),type});
+    }
+  }
+
+  if(!newItems.length){ renderNotice(["有効な行が見つかりませんでした。時刻の形式（HH:MM）をご確認ください。"],"err"); return; }
+
+  // sync panel state so 再生成 stays consistent
+  items = newItems;
+  talkData = newTalk;
+  customSlots = newCustom;
+  $("#s-start").value = toStr(newItems[0].start);
+  $("#s-end").value = toStr(newItems[newItems.length-1].end);
+  $("#s-lunch-on").checked = lunchOn;
+  if(lunchOn){ $("#s-lunch-start").value=lunchS; $("#s-lunch-end").value=lunchE; }
+  // infer a talk/qa split from the most common talk duration (best effort)
+  if(talkDurs.length){
+    const d = mode(talkDurs);
+    const qa = parseInt($("#s-qa").value,10)||0;
+    if(d>qa){ $("#s-talk").value=d-qa; } else { $("#s-talk").value=d; $("#s-qa").value=0; }
+  }
+
+  renderSlots();
+  render();
+  renderNotice([`CSVを読み込みました（${newItems.length}行）。設定パネルにも反映済みです。`],"ok");
+}
+function mode(arr){
+  const m={}; let best=arr[0], bestc=0;
+  for(const v of arr){ m[v]=(m[v]||0)+1; if(m[v]>bestc){bestc=m[v];best=v;} }
+  return best;
+}
+
+/* ---------------- events ---------------- */
+// settings -> regenerate (interactive)
+["s-start","s-end","s-talk","s-qa","s-lunch-on","s-lunch-start","s-lunch-end","s-showgap"]
+  .forEach(id => $("#"+id).addEventListener("input", generate));
+
+$("#regen").addEventListener("click", generate);
+$("#print").addEventListener("click", ()=>window.print());
+$("#export").addEventListener("click", exportCSV);
+$("#import").addEventListener("click", ()=>$("#file").click());
+$("#file").addEventListener("change", e=>{
+  const f=e.target.files[0]; if(!f) return;
+  const reader=new FileReader();
+  reader.onload=ev=>importCSV(ev.target.result);
+  reader.readAsText(f,"utf-8");
+  e.target.value="";
+});
+
+// custom slot add
+$("#add-slot").addEventListener("click", ()=>{
+  const last = customSlots[customSlots.length-1];
+  const base = last ? toMin(last.end) : toMin($("#s-start").value);
+  const s = base!=null ? toStr(base) : "15:00";
+  const e = base!=null ? toStr(base+15) : "15:15";
+  customSlots.push({id:uid(),start:s,end:e,label:"休憩",type:"break"});
+  renderSlots(); generate();
+});
+// custom slot edit / delete (delegation)
+$("#slots").addEventListener("input", e=>{
+  const row=e.target.closest(".slot-row"); if(!row) return;
+  const c=customSlots.find(x=>x.id===row.dataset.id); if(!c) return;
+  const k=e.target.dataset.k; if(k) c[k]=e.target.value;
+  generate();
+});
+$("#slots").addEventListener("click", e=>{
+  const del=e.target.dataset.del; if(!del) return;
+  customSlots=customSlots.filter(x=>x.id!==del);
+  renderSlots(); generate();
+});
+
+// inline talk editing (delegation) — no regenerate, just persist
+$("#board-body").addEventListener("input", e=>{
+  const t=e.target;
+  if(!t.classList.contains("title-in") && !t.classList.contains("sub-in")) return;
+  const idx=+t.dataset.idx, field=t.dataset.field;
+  const it=items[idx]; if(!it||it.type!=="talk") return;
+  it[field]=t.value;
+  if(talkData[it.talkIndex]) talkData[it.talkIndex][field]=t.value;
+  else talkData[it.talkIndex]={title:"",speaker:"",[field]:t.value};
+});
+
+/* ---------------- init ---------------- */
+renderSlots();
+generate();
+</script>
+</body>
+</html>
