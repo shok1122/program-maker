@@ -124,14 +124,6 @@
 .board tbody tr:hover .del-btn,.del-btn:focus{opacity:1}
 .del-btn:hover{background:#fef2f2;color:var(--danger);border-color:#fecaca}
 
-/* ---- 表の下の「発表を追加」 ---- */
-.board-foot{
-  display:flex;align-items:center;gap:10px;flex-wrap:wrap;
-  padding:12px 14px;border-top:1px solid var(--border);background:var(--panel);
-}
-.board-foot select{width:auto;min-width:130px;padding:6px 8px;font-size:12.5px}
-.board-foot select[hidden]{display:none}
-.foot-note{font-size:11px;color:var(--ink-faint)}
 .mv{display:flex;flex-direction:column;align-items:center;gap:3px;padding:7px 4px;opacity:.3;transition:opacity .12s}
 .board tbody tr:hover .mv,.mv:focus-within{opacity:1}
 .grip{
@@ -205,7 +197,7 @@ tr.row-emph .title-in:hover,tr.row-emph .sub-in:hover{border-color:var(--border-
   .wrap{max-width:none;padding:0}
   .tt-layout{display:block}
   .tt-side,.toolbar,.tabs,.demo-bar,.board-head .legend,.notice,.hint,.kill,
-  .board-foot,#tt-actions,.masthead .tools,.tt-days{display:none !important}
+  #tt-actions,.masthead .tools,.tt-days{display:none !important}
   .masthead{border-color:#000}
   .masthead .summary{display:none}
   .board{border:none;border-radius:0}

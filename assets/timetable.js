@@ -23,7 +23,6 @@ window.Timetable = (function () {
   let talkList = [];
   let items = [];         // rendered rows
   let refocus = null;     // 再描画後にフォーカスを戻す並べ替えボタン
-  let focusEntry = null;  // 再描画後にタイトル欄へフォーカスする発表（追加した直後）
   let noticeLead = null;  // 次の generate() の通知に前置するメッセージ {msgs,type}
   let absolute = false;   // CSVの時刻をそのまま使っている状態か
 
@@ -70,7 +69,6 @@ window.Timetable = (function () {
   ];
   const typeColor = i => TYPE_COLORS[i % TYPE_COLORS.length];
   const typeLen = t => (t.talk || 0) + (t.qa || 0);
-  const newEntry = typeId => ({ id: uid(), typeId, title: "", speaker: "", affiliation: "" });
 
   /* 発表者と所属は分けて持ち、表の1行に収めるときだけ「発表者（所属）」にまとめる。 */
   function joinSpeaker(who, org) {
@@ -466,7 +464,7 @@ window.Timetable = (function () {
         affiliation: String(r.affiliation || "").trim()
       });
     }
-    // マスタの種別はすべて残す（発表が0件でも「＋ 発表を追加」から選べるように）
+    // マスタの種別はすべて残す（発表が0件の種別も設定タブの一覧と揃えるため）
     return { list, types: master.concat(orphanTypes), orphan };
   }
 
@@ -599,7 +597,7 @@ window.Timetable = (function () {
       warnings.push(`発表種別「${name}」は発表＋質疑が0分のため、${n}件をタイムテーブルには並べず、下の一覧に表示しました（時間を割り当てる場合は「設定」タブで指定できます）。`);
 
     if (!talkList.length)
-      warnings.push("発表が0件です。「登録一覧から読み込む」か、表の下の「＋ 発表を追加」で追加してください。");
+      warnings.push("発表が0件です。「登録一覧から読み込む」か「CSVインポート」で読み込んでください。");
 
     // collect fixed slots
     let fixed = [];
@@ -675,7 +673,6 @@ window.Timetable = (function () {
 
     renderDays();
     renderTypes();
-    renderAddBar();
     renderUntimed();
 
     const talkItems = items.filter(i => i.type === "talk");
@@ -698,8 +695,8 @@ window.Timetable = (function () {
     renderLegend();
 
     if (!items.length) {
-      body.innerHTML = `<div class="empty-board"><b>タイムテーブルが空です</b>「登録一覧から読み込む」か、下の「＋ 発表を追加」から作りはじめてください。</div>`;
-      refocus = null; focusEntry = null;
+      body.innerHTML = `<div class="empty-board"><b>タイムテーブルが空です</b>「登録一覧から読み込む」か「CSVインポート」から作りはじめてください。</div>`;
+      refocus = null;
       return;
     }
 
@@ -777,28 +774,6 @@ window.Timetable = (function () {
       if (btn) btn.focus({ preventScroll: false });
       refocus = null;
     }
-    // 追加した直後の発表はタイトル欄をすぐ入力できるようにする
-    if (focusEntry) {
-      const inp = body.querySelector(`tr[data-entry="${focusEntry}"] .title-in`);
-      focusEntry = null;
-      if (inp) { inp.focus(); inp.scrollIntoView({ block: "nearest" }); }
-    }
-  }
-
-  /* 表の下の「＋ 発表を追加」。時間が0分の種別は配置できないので選択肢に出さない。 */
-  function renderAddBar() {
-    const sel = $("#tt-add-kind"), btn = $("#tt-add-talk"), note = $("#tt-add-note");
-    if (!sel || !btn) return;
-    const usable = talkTypes.filter(t => typeLen(t) > 0);
-    const prev = sel.value;
-    sel.innerHTML = usable.map((t, i) =>
-      `<option value="${esc(t.id)}">${esc(t.name || `種別${i + 1}`)}（${typeLen(t)}分）</option>`).join("");
-    if (usable.some(t => t.id === prev)) sel.value = prev;
-    sel.hidden = usable.length < 2;
-    btn.disabled = !usable.length;
-    if (note) note.textContent = usable.length
-      ? "空の発表を1件、いちばん下に追加します。"
-      : "発表時間が設定された種別がありません（「設定」タブで指定してください）。";
   }
 
   /* 発表＋質疑が0分の種別（ポスター発表など）は時刻を持てずタイムテーブルに並べられないので、
@@ -863,32 +838,7 @@ window.Timetable = (function () {
     }</div>`;
   }
 
-  /* ---------------- 発表の追加・削除 ---------------- */
-  function addTalk(typeId) {
-    const t = talkTypes.find(x => x.id === typeId && typeLen(x) > 0) || talkTypes.find(x => typeLen(x) > 0);
-    if (!t) {
-      renderNotice(["発表時間が設定された種別がありません。「設定」タブで発表・質疑の時間を指定してください。"], "err");
-      return;
-    }
-    const e = newEntry(t.id);
-    talkList.push(e);
-    focusEntry = e.id;
-
-    if (absolute) {
-      // CSVの時刻をそのまま使っている状態。最後の枠のうしろに続けて置く
-      const base = items.length ? items[items.length - 1].end : (toMin($("#tt-start").value) || 0);
-      items.push({
-        type: "talk", start: base, end: base + typeLen(t), entryId: e.id,
-        typeName: t.name || "発表", colorIdx: talkTypes.indexOf(t), emph: !!t.emphasis,
-        title: "", speaker: ""
-      });
-      render();
-      scheduleSave();
-    } else {
-      generate();
-    }
-  }
-
+  /* ---------------- 発表の削除 ---------------- */
   function removeTalk(id) {
     const i = talkList.findIndex(x => x.id === id);
     if (i < 0) return;
@@ -1162,7 +1112,7 @@ window.Timetable = (function () {
       return { id: uid(), typeId: t.group.def.id, title: t.title,
                speaker: who.speaker, affiliation: who.affiliation };
     });
-    applyMasterTypes(false);   // CSVに無かった種別も「＋ 発表を追加」から選べるように残す
+    applyMasterTypes(false);   // CSVに無かった種別も種別マスタのぶんは残す
     breakSlots = fixed.map(f => ({ id: uid(), start: toStr(f.start), end: toStr(f.end), label: f.label }));
     $("#tt-lunch-on").checked = !!lunch;
     if (lunch) { $("#tt-lunch-start").value = toStr(lunch.start); $("#tt-lunch-end").value = toStr(lunch.end); }
@@ -1252,9 +1202,6 @@ window.Timetable = (function () {
       const b = e.target.closest(".day-btn");
       if (b) switchDay(b.dataset.day);
     });
-
-    // 発表の追加（表の下）
-    $("#tt-add-talk").addEventListener("click", () => addTalk($("#tt-add-kind").value));
 
     // 休憩の追加
     $("#tt-add-slot").addEventListener("click", () => {
