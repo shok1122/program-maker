@@ -132,7 +132,7 @@ window.TM = (function () {
       [0, "Title 9", "Name 9", "XXX大学"],
       [1, "Title 10", "Name 10", "XXX大学"],
       [2, "Title 11", "Name 11", "XXX大学"],
-      [2, "Title 12", "Name 12", "XXX大学"]
+      [2, "Title 12", "Name 12", "XXX大学"],
       [2, "Title 13", "Name 13", "YYY大学"],
       [2, "Title 14", "Name 14", "YYY大学"]
     ];
