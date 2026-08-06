@@ -1,0 +1,10 @@
+.git
+.github
+.gitignore
+.nojekyll
+data
+*.md
+Dockerfile
+docker-compose.yml
+.env
+.env.example

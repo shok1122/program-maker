@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>管理者ログイン</title>
+<meta name="robots" content="noindex">
+<link rel="stylesheet" href="assets/base.css">
+</head>
+<body>
+<div class="login-wrap">
+  <form class="login-card" id="form" novalidate>
+    <h1>管理者ログイン</h1>
+    <span class="en">Administrator</span>
+
+    <div class="notice" id="notice"></div>
+
+    <div class="field">
+      <label for="pw">管理者パスワード</label>
+      <input type="password" id="pw" autocomplete="current-password" autofocus required>
+    </div>
+
+    <button type="submit" class="btn block" id="submit">ログイン</button>
+    <a class="back" href="index.html">← 参加登録ページへ</a>
+  </form>
+</div>
+
+<script>
+"use strict";
+(function () {
+  const form = document.getElementById("form");
+  const pw = document.getElementById("pw");
+  const btn = document.getElementById("submit");
+  const notice = document.getElementById("notice");
+
+  function show(msg, kind) {
+    notice.className = msg ? "notice show " + kind : "notice";
+    notice.textContent = msg || "";
+  }
+
+  form.addEventListener("submit", async e => {
+    e.preventDefault();
+    if (!pw.value) { show("パスワードを入力してください。", "err"); pw.focus(); return; }
+    btn.disabled = true;
+    btn.textContent = "確認中…";
+    show("");
+    try {
+      const res = await fetch("api/admin/login", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json", "Accept": "application/json", "X-TM-Request": "1" },
+        body: JSON.stringify({ password: pw.value })
+      });
+      let data = null;
+      try { data = await res.json(); } catch (_) { /* 本文なし */ }
+      if (res.ok) { location.href = "admin.html"; return; }
+      show((data && data.error) || `ログインできませんでした（${res.status}）。`, "err");
+      pw.select();
+    } catch (_) {
+      show("サーバーに接続できませんでした。", "err");
+    } finally {
+      btn.disabled = false;
+      btn.textContent = "ログイン";
+    }
+  });
+})();
+</script>
+</body>
+</html>

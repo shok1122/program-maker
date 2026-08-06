@@ -1,0 +1,119 @@
+/* タイムテーブル作成ツール固有のスタイル（管理画面の「タイムテーブル」タブ）。
+   共通の土台は assets/base.css。 */
+
+.tt-layout{display:grid;grid-template-columns:340px 1fr;gap:24px;align-items:start}
+@media (max-width:920px){ .tt-layout{grid-template-columns:1fr} }
+
+/* ---- 発表種別エディタ ---- */
+.types{display:flex;flex-direction:column;gap:9px}
+.type-row{
+  display:grid;grid-template-columns:1fr auto;gap:8px;align-items:start;
+  padding:10px;border:1px solid var(--border);border-radius:9px;background:var(--panel);
+}
+.type-row .head{grid-column:1/2;grid-row:1/2;display:flex;align-items:center;gap:8px}
+.type-row .swatch{width:10px;height:10px;border-radius:3px;flex:0 0 auto}
+.type-row .kill{grid-column:2/3;grid-row:1/3}
+.type-row .nums{grid-column:1/2;grid-row:2/3;display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px}
+.type-row input[type=number]{padding:6px 7px;font-size:13px}
+.mini{display:block;font-size:10px;font-weight:600;letter-spacing:.03em;color:var(--ink-faint);margin-bottom:2px}
+.type-empty{font-size:12px;color:var(--ink-faint);text-align:center;padding:6px 0}
+
+/* ---- 特別枠エディタ ---- */
+.slots{display:flex;flex-direction:column;gap:9px}
+.slot-row{
+  display:grid;grid-template-columns:1fr 1fr auto;gap:8px;align-items:center;
+  padding:10px;border:1px solid var(--border);border-radius:9px;background:var(--panel);
+}
+.slot-row .times{display:grid;grid-template-columns:1fr 1fr;gap:6px;grid-column:1/3}
+.slot-row .name{grid-column:1/2}
+.slot-row .type{grid-column:2/3}
+.slot-row .kill{grid-column:3/4;grid-row:1/3;align-self:stretch}
+.slot-empty{font-size:12px;color:var(--ink-faint);text-align:center;padding:6px 0}
+
+/* ---- 表 ---- */
+.board{background:var(--paper);border:1px solid var(--border);border-radius:12px;overflow:hidden}
+.board-head{
+  display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;
+  padding:14px 18px;border-bottom:1px solid var(--border);
+}
+.board-head .ttl{font-size:13px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-soft)}
+.legend{display:flex;gap:14px;flex-wrap:wrap;justify-content:flex-end;font-size:11px;color:var(--ink-soft)}
+.legend span{display:inline-flex;align-items:center;gap:5px}
+.legend i{width:9px;height:9px;border-radius:2px;display:inline-block}
+
+.board table tbody td{padding:0;vertical-align:middle}
+.board table tbody tr:hover{background:transparent}
+.cell{padding:11px 12px}
+
+.c-time{width:118px;white-space:nowrap}
+.time-range{font-family:var(--mono);font-size:13px;font-weight:600;color:var(--ink);display:flex;align-items:center;gap:7px}
+.chip{width:4px;align-self:stretch;min-height:26px;border-radius:3px;background:var(--ink-soft);flex:0 0 auto}
+.time-range .rng{display:flex;flex-direction:column;line-height:1.35}
+.time-range .rng small{font-size:10px;color:var(--ink-faint);font-weight:500}
+
+.c-kind{width:104px}
+.c-dur{width:70px;font-family:var(--mono);color:var(--ink-soft);font-size:12px;text-align:right}
+
+.c-move{width:44px}
+.mv{display:flex;flex-direction:column;align-items:center;gap:3px;padding:7px 4px;opacity:.3;transition:opacity .12s}
+.board tbody tr:hover .mv,.mv:focus-within{opacity:1}
+.grip{
+  cursor:grab;color:var(--ink-faint);font-size:12px;line-height:1;font-family:var(--mono);
+  padding:2px 7px;border-radius:5px;background:transparent;border:1px solid transparent;
+}
+.grip:hover{background:var(--panel-2);border-color:var(--border);color:var(--ink-soft)}
+.grip:active{cursor:grabbing}
+.arrows{display:flex;gap:2px}
+.mv-btn{
+  font-size:8px;line-height:1;padding:3px 5px;border-radius:4px;
+  color:var(--ink-faint);background:var(--paper);border:1px solid var(--border);
+}
+.mv-btn:hover{color:var(--accent);border-color:var(--accent);background:var(--accent-soft)}
+tr.dragging{opacity:.4}
+tr.drop-before td{box-shadow:inset 0 2px 0 0 var(--accent)}
+tr.drop-after td{box-shadow:inset 0 -2px 0 0 var(--accent)}
+
+tr.row-lunch{background:var(--lunch-bg)}
+tr.row-lunch .chip{background:var(--lunch)}
+tr.row-break{background:var(--break-bg)}
+tr.row-break .chip{background:var(--break)}
+tr.row-custom{background:var(--custom-bg)}
+tr.row-custom .chip{background:var(--custom)}
+tr.row-gap{background:repeating-linear-gradient(45deg,#fff,#fff 7px,#f8fafc 7px,#f8fafc 14px)}
+tr.row-gap .chip{background:var(--gap)}
+tr.row-gap td{color:var(--ink-faint)}
+
+.title-in{
+  width:100%;border:1px solid transparent;background:transparent;border-radius:6px;
+  padding:6px 8px;font-size:14px;font-weight:600;color:var(--ink);font-family:inherit;
+}
+.title-in::placeholder{color:var(--ink-faint);font-weight:400}
+.title-in:hover{border-color:var(--border)}
+.title-in:focus{outline:none;border-color:var(--accent);background:var(--paper);box-shadow:0 0 0 3px var(--accent-soft)}
+.sub-in{
+  width:100%;border:1px solid transparent;background:transparent;border-radius:6px;
+  padding:3px 8px;font-size:12px;color:var(--ink-soft);margin-top:1px;font-family:inherit;
+}
+.sub-in::placeholder{color:var(--ink-faint)}
+.sub-in:hover{border-color:var(--border)}
+.sub-in:focus{outline:none;border-color:var(--accent);background:var(--paper);box-shadow:0 0 0 3px var(--accent-soft)}
+.fixed-label{font-size:14px;font-weight:600;color:var(--ink);padding:6px 8px}
+
+.empty-board{padding:48px 20px;text-align:center;color:var(--ink-faint)}
+.empty-board b{display:block;color:var(--ink-soft);margin-bottom:4px;font-size:15px}
+
+/* ---- 印刷 ---- */
+@media print{
+  body{background:#fff;font-size:11px}
+  .wrap{max-width:none;padding:0}
+  .tt-layout{display:block}
+  .tt-side,.toolbar,.tabs,.demo-bar,.board-head .legend,.notice,.hint,.kill,
+  #tt-actions,.masthead .tools{display:none !important}
+  .masthead{border-color:#000}
+  .masthead .summary{display:none}
+  .board{border:none;border-radius:0}
+  .title-in,.sub-in{border:none;box-shadow:none;padding:2px 0}
+  .board table tbody td,.board table thead th{border-color:#000}
+  tr.row-gap{display:none}
+  .c-move{display:none}
+}

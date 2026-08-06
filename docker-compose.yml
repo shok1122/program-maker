@@ -1,0 +1,22 @@
+services:
+  timetable:
+    build: .
+    image: timetable-maker
+    container_name: timetable-maker
+    restart: unless-stopped
+    ports:
+      - "${HOST_PORT:-8080}:8080"
+    environment:
+      # 管理画面とタイムテーブル作成ツールのパスワード（必須）
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?ADMIN_PASSWORD を .env に設定してください}
+      # 以下はいずれも任意
+      REGISTRATION_KEY: ${REGISTRATION_KEY:-}   # 参加登録キーの初期値（初回起動時のみ）
+      EVENT_NAME: ${EVENT_NAME:-}               # イベント名の初期値（初回起動時のみ）
+      COOKIE_SECURE: ${COOKIE_SECURE:-0}        # HTTPS で公開するなら 1
+      SESSION_HOURS: ${SESSION_HOURS:-12}
+      TRUST_PROXY: ${TRUST_PROXY:-0}            # リバースプロキシ配下なら 1
+    volumes:
+      - timetable-data:/data
+
+volumes:
+  timetable-data:

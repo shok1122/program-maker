@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>管理画面 / タイムテーブル作成</title>
+<meta name="robots" content="noindex">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/timetable.css">
+</head>
+<body>
+
+<div class="demo-bar" id="demo-bar">
+  <b>デモモード</b>
+  <span>サーバーに接続していないため、パスワードなしで閲覧できます。データはこのブラウザ（localStorage）にのみ保存されます。</span>
+  <span class="sep">|</span>
+  <button type="button" id="demo-reset">デモデータを初期化</button>
+</div>
+
+<div class="wrap">
+
+  <header class="masthead">
+    <h1><span id="adm-event">管理画面</span> <span class="en">Admin</span></h1>
+    <div class="summary" id="adm-summary"></div>
+    <div class="tools">
+      <a class="btn ghost small" href="index.html">参加登録ページ</a>
+      <button class="btn ghost small" id="adm-logout" hidden>ログアウト</button>
+    </div>
+  </header>
+
+  <div class="notice" id="notice"></div>
+
+  <div class="skeleton" id="loading">読み込み中…</div>
+
+  <div id="shell" hidden>
+    <div class="tabs" role="tablist">
+      <button class="tab" role="tab" id="tab-regs" aria-selected="true" aria-controls="panel-regs">
+        登録一覧<span class="n" id="tab-regs-n">0</span>
+      </button>
+      <button class="tab" role="tab" id="tab-tt" aria-selected="false" aria-controls="panel-tt">
+        タイムテーブル
+      </button>
+      <button class="tab" role="tab" id="tab-set" aria-selected="false" aria-controls="panel-set">
+        設定
+      </button>
+    </div>
+
+    <!-- ============ 登録一覧 ============ -->
+    <section class="tabpanel" role="tabpanel" id="panel-regs" aria-labelledby="tab-regs">
+      <div class="toolbar">
+        <button class="btn" id="rg-add">＋ 手動で追加</button>
+        <button class="btn ghost" id="rg-export">CSVエクスポート</button>
+        <button class="btn ghost" id="rg-reload">再読み込み</button>
+      </div>
+      <div class="hint" style="margin:-10px 0 14px">
+        タイムテーブルに反映するには「タイムテーブル」タブの<b>登録一覧から読み込む</b>を使ってください（所属まで反映されます）。
+        エクスポートしたCSVも同タブのCSVインポートで読み込めますが、所属は別列のため反映されません。
+      </div>
+      <div class="tablewrap">
+        <div class="scroll">
+          <table>
+            <thead><tr>
+              <th class="num">#</th>
+              <th style="width:120px">種別</th>
+              <th>タイトル</th>
+              <th style="width:150px">発表者</th>
+              <th style="width:190px">所属</th>
+              <th style="width:130px">登録日時</th>
+              <th class="rowacts"></th>
+            </tr></thead>
+            <tbody id="rg-body"></tbody>
+          </table>
+        </div>
+        <div class="empty-state" id="rg-empty" hidden>
+          <b>登録はまだありません</b>参加登録ページから申込があると、ここに一覧が表示されます。
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ タイムテーブル ============ -->
+    <section class="tabpanel" role="tabpanel" id="panel-tt" aria-labelledby="tab-tt" hidden>
+      <div class="tt-layout">
+
+        <div class="tt-side">
+          <div class="panel">
+            <h2>登録データ</h2>
+            <button class="btn block" id="tt-load-regs">登録一覧から読み込む</button>
+            <div class="hint" id="tt-load-hint"></div>
+          </div>
+
+          <div class="panel">
+            <h2>基本設定</h2>
+            <div class="field">
+              <label for="tt-start">開始時刻</label>
+              <input type="time" id="tt-start" value="09:00">
+            </div>
+            <div class="hint">開始時刻から順に発表コマを並べ、固定枠の前で区切ります。終了時刻は発表の件数と固定枠から決まります。</div>
+          </div>
+
+          <div class="panel">
+            <h2>発表種別</h2>
+            <div class="types" id="tt-types"></div>
+            <button class="btn ghost block small" id="tt-add-type" style="margin-top:11px">＋ 種別を追加</button>
+            <div class="hint">1コマ = 発表 + 質疑。種別ごとに件数を指定すると、上から順に配置されます（空欄にすると現在の件数のまま）。<br>発表の順序は表の行を<b>ドラッグ</b>、または<b>▲▼</b>で入れ替えられます（時刻は自動で振り直されます）。</div>
+          </div>
+
+          <div class="panel">
+            <h2>ランチ</h2>
+            <label class="inline-check" style="margin-bottom:12px">
+              <input type="checkbox" id="tt-lunch-on" checked> ランチ枠を設ける
+            </label>
+            <div class="row2">
+              <div class="field">
+                <label for="tt-lunch-start">開始</label>
+                <input type="time" id="tt-lunch-start" value="12:00">
+              </div>
+              <div class="field">
+                <label for="tt-lunch-end">終了</label>
+                <input type="time" id="tt-lunch-end" value="13:00">
+              </div>
+            </div>
+          </div>
+
+          <div class="panel">
+            <h2>特別枠 / 休憩</h2>
+            <div class="slots" id="tt-slots"></div>
+            <button class="btn ghost block small" id="tt-add-slot" style="margin-top:11px">＋ 枠を追加</button>
+            <div class="hint">休憩・基調講演・ポスター・授賞式など、発表以外の時間帯を自由に定義できます。</div>
+          </div>
+
+          <div class="panel">
+            <h2>表示</h2>
+            <label class="inline-check">
+              <input type="checkbox" id="tt-showgap" checked> 空き時間を表示
+            </label>
+          </div>
+        </div>
+
+        <div class="tt-main">
+          <div class="toolbar" id="tt-actions">
+            <button class="btn" id="tt-regen">設定から再生成</button>
+            <button class="btn ghost" id="tt-export">CSVエクスポート</button>
+            <button class="btn ghost" id="tt-import">CSVインポート</button>
+            <button class="btn ghost" id="tt-print">印刷 / PDF</button>
+            <input type="file" id="tt-file" accept=".csv,text/csv" hidden>
+            <span class="spacer"></span>
+            <span class="saved-tag" id="tt-saved"></span>
+          </div>
+
+          <div class="hint" style="margin:-10px 0 14px">
+            CSVは「開始時刻・終了時刻」の列が無くても読み込めます（例：<code>発表種別,タイトル,発表者</code>）。
+            その場合はCSVの行順のまま、基本設定の<b>開始時刻</b>から順に配置されます。
+          </div>
+
+          <div class="notice" id="tt-notice"></div>
+
+          <div class="board">
+            <div class="board-head">
+              <span class="ttl">Timetable</span>
+              <div class="summary" id="tt-summary" style="font-size:11px;gap:14px"></div>
+              <div class="legend" id="tt-legend"></div>
+            </div>
+            <div id="tt-board"></div>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- ============ 設定 ============ -->
+    <section class="tabpanel" role="tabpanel" id="panel-set" aria-labelledby="tab-set" hidden>
+      <div class="tt-layout">
+
+        <div>
+          <div class="panel">
+            <h2>受付</h2>
+            <label class="inline-check" style="margin-bottom:14px">
+              <input type="checkbox" id="st-open"> 参加登録を受け付ける
+            </label>
+            <div class="field">
+              <label for="st-key">参加登録キー<span class="opt">空欄なら誰でも登録できます</span></label>
+              <input type="text" id="st-key" maxlength="200" autocomplete="off" placeholder="（未設定）">
+              <div class="hint">登録者はこのキーの入力を求められます。参加者へ配布してください。</div>
+            </div>
+            <div class="field">
+              <label>参加登録ページ</label>
+              <input type="text" id="st-url" readonly>
+              <div class="hint">このURLを参加者に案内してください。</div>
+            </div>
+          </div>
+
+          <div class="panel">
+            <h2>イベント情報</h2>
+            <div class="field">
+              <label for="st-event">イベント名</label>
+              <input type="text" id="st-event" maxlength="120">
+            </div>
+            <div class="field">
+              <label for="st-notice">案内文<span class="opt">任意</span></label>
+              <textarea id="st-notice" maxlength="2000" placeholder="参加登録ページに表示する案内文"></textarea>
+            </div>
+          </div>
+        </div>
+
+        <div>
+          <div class="panel">
+            <h2>種別<span class="tail">参加登録ページのドロップダウン</span></h2>
+            <div class="types" id="st-types"></div>
+            <button class="btn ghost block small" id="st-add-type" style="margin-top:11px">＋ 種別を追加</button>
+            <div class="hint">
+              ここで定義した種別が参加登録ページの「種別」ドロップダウンになります。
+              発表時間・質疑応答時間はタイムテーブル作成時のコマ長として使われます（ポスター発表など時間を割り当てない種別は0でも構いません）。
+              <br>すでに登録がある種別を削除すると、その登録は種別なしになります。
+            </div>
+          </div>
+
+          <div class="panel">
+            <h2>保存</h2>
+            <button class="btn block" id="st-save">設定を保存</button>
+            <div class="hint" id="st-status">変更後に押してください。</div>
+          </div>
+        </div>
+
+      </div>
+    </section>
+  </div>
+
+</div>
+
+<script src="assets/api.js"></script>
+<script src="assets/timetable.js"></script>
+<script src="assets/admin.js"></script>
+</body>
+</html>

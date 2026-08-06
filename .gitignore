@@ -1,0 +1,4 @@
+# 参加登録データ（本番のJSONはリポジトリに入れない）
+/data/
+# Docker Compose の環境変数
+.env
