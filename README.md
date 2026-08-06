@@ -75,6 +75,33 @@ HTTP でのアクセスは Caddy が HTTPS へリダイレクトします。使�
 > 証明書が取れないときや別のリバースプロキシ（nginx など）を使う場合は
 > [HTTPS で公開する（Let's Encrypt）](#https-で公開するlets-encrypt)を見てください。
 
+### ドメイン名が無い場合（オレオレ証明書）
+
+学内LANだけで使う、公開できるドメイン名が無い、80番が塞がれていて Let's Encrypt が使えない、
+という場合は**オレオレ証明書**（自己署名証明書）で HTTPS にできます。証明書は Caddy が自前のCAで
+発行するので、DNS の設定も 80番の開放も要りません。
+
+`.env` を書き換えるのは次の4つです（`ACME_EMAIL` と `ACME_CA` は使いません）。
+
+```bash
+SITE_ADDRESS=192.168.1.10, localhost   # ブラウザで使うホスト名 / IPアドレスを全部（カンマ区切り）
+COOKIE_SECURE=1                        # Cookie に Secure を付ける（既定は 0）
+TRUST_PROXY=1                          # 接続元をプロキシ経由で判定する（既定は 0）
+HOST_BIND=127.0.0.1                    # 平文の 8080番を外に出さない（既定は 0.0.0.0）
+```
+
+```bash
+make build && make up-https-selfsigned
+make ca-cert            # CAの証明書を ./ca.crt に取り出す（任意）
+```
+
+- 参加登録ページ … `https://192.168.1.10/` ← 発表者に配るURL
+- 管理画面 … `https://192.168.1.10/admin` ← `make password` で決めたパスワードでログイン
+
+ブラウザが知らないCAの証明書なので初回は警告が出ますが、承諾すればそのまま使えます。
+`ca.crt` を見る側の端末に入れておけば警告は出なくなります
+（[HTTPS で公開する（オレオレ証明書）](#https-で公開するオレオレ証明書)）。
+
 ## 画面構成
 
 | 画面 | URL | 認証 |
@@ -239,6 +266,68 @@ HTTP でのアクセスは Caddy が HTTPS へリダイレクトします。
 - 別のリバースプロキシ（nginx など）が既にある場合は、Caddy を使わずに `HOST_BIND=127.0.0.1` で
   8080番を localhost に閉じ、そのプロキシから転送してください。`COOKIE_SECURE=1` と `TRUST_PROXY=1` は同じく必要です。
 
+### HTTPS で公開する（オレオレ証明書）
+
+公開できるドメイン名が無い場合や、80番が塞がれていて Let's Encrypt の HTTP-01 チャレンジが通らない場合は、
+**オレオレ証明書**（自己署名証明書）で HTTPS にできます。設定は
+[`Caddyfile.selfsigned`](Caddyfile.selfsigned) にあります。
+
+Caddy が自前のCA（Caddy Local Authority）を作り、そこから公開先の証明書を発行します。
+openssl で証明書を作る作業も、期限が切れるたびに作り直す作業も要りません。
+
+```bash
+# .env
+SITE_ADDRESS=192.168.1.10, program.example.local, localhost   # ブラウザで使う名前をすべて
+COOKIE_SECURE=1                      # Cookie に Secure を付ける
+TRUST_PROXY=1                        # 接続元をプロキシ経由で判定する
+HOST_BIND=127.0.0.1                  # 平文の 8080番を外に出さない
+```
+
+```bash
+make up-https-selfsigned   # 80/443番を使います
+make logs-https            # certificate obtained successfully ... "issuer":"local" が出れば完了
+```
+
+要点は、`SITE_ADDRESS` に**ブラウザで実際に使う名前をすべて**書くことです。ここに無い名前で繋ぐと
+証明書が見つからず、`ERR_SSL_UNRECOGNIZED_NAME_ALERT` などになって接続できません
+（書き足して `make up-https-selfsigned` をやり直せば直ります）。
+
+#### 証明書の警告を消す（任意）
+
+そのままでもブラウザの警告を承諾すれば使えますが、CAの証明書を見る側の端末に入れておけば警告は出ません。
+発表者に配るURLなら、入れておいたほうが「危険なサイト」と思われずに済みます。
+
+```bash
+make ca-cert    # ./ca.crt に CA の証明書（公開鍵側）が出る。秘密鍵は含まれません
+```
+
+| 端末 | 入れ方 |
+| --- | --- |
+| Windows | `ca.crt` をダブルクリック →「証明書のインストール」→ 保存場所は**ローカルコンピューター** →「信頼されたルート証明機関」を選ぶ |
+| macOS | キーチェーンアクセスの「システム」にドラッグ → 開いて「この証明書を使用するとき」を**常に信頼**にする |
+| Linux | `sudo cp ca.crt /usr/local/share/ca-certificates/program-maker.crt && sudo update-ca-certificates` |
+| Firefox | OS の設定を見ないので別途、設定 → プライバシーとセキュリティ → 証明書を表示 → 認証局証明書に**インポート** |
+| iOS | `ca.crt` を送って開く → プロファイルをインストール → 設定 → 一般 → 情報 → **証明書信頼設定**で有効にする |
+| Android | 設定 → セキュリティ → 暗号化と認証情報 → 証明書のインストール → **CA証明書** |
+
+その他の注意点は次のとおりです。
+
+- `make up-https`（Let's Encrypt）とは**同時に起動できません**。どちらも 80/443番を使うので、
+  切り替えるときは `make down` してから起動し直してください。
+- CAの鍵と証明書は `caddy-data` ボリュームに残ります。`docker volume rm program-maker_caddy-data` で
+  消すとCAごと作り直しになるので、端末に入れた `ca.crt` も入れ直しになります。
+- サーバ証明書の有効期間は12時間で、Caddy が期限前に自動で発行し直します（CAの証明書は10年）。
+  止めている間に切れても起動時に作り直すので、更新の手当ては要りません。
+- **IPアドレスで見せる場合**: ブラウザは接続先がIPアドレスだと名前（SNI）を送らないため、Caddy は
+  どの証明書を返すか決められません。`make up-https-selfsigned` は `SITE_ADDRESS` の**先頭**を
+  `DEFAULT_SNI` として渡し、これを名前が分からないときの証明書にします。IPアドレスで見せるなら
+  先頭にIPアドレスを書くか、`.env` の `DEFAULT_SNI` で明示してください。
+- 通信の暗号化はできますが、**相手が本物かの確認はCAを端末に入れないとできません**。警告を承諾する運用は、
+  経路上で偽のサーバに差し替えられても気付けないということです。インターネットに公開するなら
+  [Let's Encrypt](#https-で公開するlets-encrypt) を使ってください。
+- `make` を使わず `docker compose` を直に叩く場合は、`.env` に `CADDYFILE=./Caddyfile.selfsigned` と
+  `DEFAULT_SNI`（IPアドレスで見せる場合）を書いてください。`make up-https-selfsigned` はこの2つを自動で渡します。
+
 ### 発表種別のカスタマイズ（`config/types.json`）
 
 参加登録ページのドロップダウンに並ぶ**発表種別**は、コンテナを起動する前に
@@ -304,9 +393,11 @@ docker compose restart
 | `SESSION_HOURS` | `12` | ログインの有効時間 |
 | `TRUST_PROXY` | `0` | リバースプロキシ配下でログイン試行回数を接続元ごとに数えたい場合は `1` |
 | `HOST_PORT` / `HOST_BIND` | `8080` / `0.0.0.0` | ホスト側の公開先（docker compose のみ）。HTTPS で公開するなら `HOST_BIND=127.0.0.1` |
-| `SITE_ADDRESS` | 空 | 証明書を取得するドメイン名（`make up-https` のとき必須）。[HTTPS で公開する](#https-で公開するlets-encrypt) |
-| `ACME_EMAIL` | 空 | Let's Encrypt のアカウントに登録するメールアドレス（同上） |
+| `SITE_ADDRESS` | 空 | 証明書を出す公開先（`make up-https` / `make up-https-selfsigned` のとき必須）。[オレオレ証明書](#https-で公開するオレオレ証明書)ならホスト名・IPアドレスをカンマ区切りで並べられます |
+| `ACME_EMAIL` | 空 | Let's Encrypt のアカウントに登録するメールアドレス（`make up-https` のとき必須） |
 | `ACME_CA` | Let's Encrypt 本番 | ACME サーバー。動作確認中はステージング環境に向けます |
+| `DEFAULT_SNI` | 空（`SITE_ADDRESS` の先頭） | IPアドレスで繋がれたときに返す証明書。[オレオレ証明書](#https-で公開するオレオレ証明書)のときだけ使います |
+| `CADDYFILE` | `./Caddyfile` | リバースプロキシの設定ファイル。`make up-https-selfsigned` は `./Caddyfile.selfsigned` を渡します |
 
 ### バックアップ
 
@@ -336,7 +427,8 @@ Node.js 22 以降で、追加パッケージのインストールは不要です
 - パスワードは平文では保持せず、`.htpasswd` と同じくハッシュ値（ソルト付き scrypt）だけを設定に置きます
   （[管理者パスワード](#管理者パスワード)）。
 - 単一の共有パスワードによる簡易的な保護です。インターネットに公開する場合はHTTPS（`COOKIE_SECURE=1`）を前提にしてください
-  （[HTTPS で公開する](#https-で公開するlets-encrypt) に Let's Encrypt での手順があります）。
+  （[Let's Encrypt](#https-で公開するlets-encrypt) での手順があります。学内LANだけで使うなら
+  [オレオレ証明書](#https-で公開するオレオレ証明書)でも構いません）。
 
 ## デモ（GitHub Pages）
 
@@ -371,6 +463,7 @@ server/
 config/
   types.json        発表種別の定義（起動前に編集する）
 Caddyfile           HTTPS で公開する場合のリバースプロキシ設定（Let's Encrypt）
+Caddyfile.selfsigned  同上（オレオレ証明書。Caddy が自前のCAで発行する）
 Dockerfile / docker-compose.yml / .env.example
 ```
 

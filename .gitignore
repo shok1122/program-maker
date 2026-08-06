@@ -1,4 +1,8 @@
 # 参加登録データ（本番のJSONはリポジトリに入れない）
 /data/
 # Docker Compose の環境変数
-.env
+.env*
+# make ca-cert が書き出すオレオレ証明書の CA 証明書
+/ca.crt
+
+!.env.example

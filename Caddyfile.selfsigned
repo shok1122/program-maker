@@ -1,0 +1,32 @@
+# いわゆる「オレオレ証明書」（自己署名証明書）で HTTPS を有効にするリバースプロキシの設定。
+#
+# 公開できるドメイン名が無い場合や、80番が外から塞がれていて Let's Encrypt の
+# HTTP-01 チャレンジが通らない場合はこちらを使います（Let's Encrypt 版の設定は Caddyfile）。
+#
+# 証明書は Caddy が自前の CA で発行するので、openssl も certbot も要りません。
+# 期限が来る前に自動で作り直すため、更新の手当ても不要です。
+# CA の鍵と証明書は caddy-data ボリュームに残るので、再起動しても作り直しになりません。
+#
+# ブラウザが知らない CA の証明書なので、初回アクセスでは警告が出ます。
+# `make ca-cert` で CA の証明書を取り出して見る側の端末に入れておけば、警告は出なくなります。
+
+{
+	# IP アドレスで繋いだブラウザは接続先の名前（SNI）を送ってこないので、
+	# 名前が分からないときに使う証明書を決めておく。`make up-https-selfsigned` が
+	# SITE_ADDRESS の先頭を渡します（空なら何もしないので、この行があっても害はありません）。
+	default_sni "{$DEFAULT_SNI}"
+}
+
+# 公開先は .env の SITE_ADDRESS から渡ります。ブラウザで使うホスト名と IP アドレスを
+# すべてカンマ区切りで書いてください（ここに無い名前で繋ぐと証明書が見つからず接続できません）。
+#   SITE_ADDRESS=program.example.local, 192.168.1.10, localhost
+{$SITE_ADDRESS} {
+	encode zstd gzip
+
+	# Caddy 内部の CA で証明書を発行する（ACME サーバには問い合わせない）。
+	tls internal
+
+	# HTTP から HTTPS へのリダイレクトと X-Forwarded-* の付与は Caddy が自動で行います。
+	# アプリ側は .env で COOKIE_SECURE=1 と TRUST_PROXY=1 を有効にしてください。
+	reverse_proxy program-maker:8080
+}
