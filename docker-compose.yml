@@ -5,7 +5,9 @@ services:
     container_name: program-maker
     restart: unless-stopped
     ports:
-      - "${HOST_PORT:-8080}:8080"
+      # HTTPS で公開するとき（caddy プロファイル）は .env で HOST_BIND=127.0.0.1 にして、
+      # 平文の 8080 番をインターネットに出さないでください。
+      - "${HOST_BIND:-0.0.0.0}:${HOST_PORT:-8080}:8080"
     environment:
       # 管理画面（登録一覧 / タイムテーブル / 設定）のパスワード（必須）
       # 平文ではなくハッシュ値。`make password` で作って .env に貼り付けてください。
@@ -21,5 +23,31 @@ services:
       # 発表種別の定義。書き換えて再起動すれば反映されます（再ビルド不要）
       - ./config:/app/config:ro
 
+  # Let's Encrypt でサーバ証明書を取って HTTPS で公開する場合だけ起動するリバースプロキシ。
+  #   make up-https   （= docker compose --profile https up -d）
+  # 設定は Caddyfile に、ドメイン名などは .env に書きます。
+  caddy:
+    image: caddy:2-alpine
+    container_name: program-maker-caddy
+    restart: unless-stopped
+    profiles: ["https"]
+    ports:
+      - "80:80"        # HTTP-01 チャレンジと HTTPS へのリダイレクトに必要
+      - "443:443"
+      - "443:443/udp"  # HTTP/3
+    environment:
+      SITE_ADDRESS: ${SITE_ADDRESS:-}   # 証明書を取るドメイン名（必須）
+      ACME_EMAIL: ${ACME_EMAIL:-}       # Let's Encrypt に登録するメールアドレス（必須）
+      # 動作確認中はステージング環境（.env 参照）に向けると発行回数の制限に掛かりません
+      ACME_CA: ${ACME_CA:-https://acme-v02.api.letsencrypt.org/directory}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data      # 取得した証明書と秘密鍵。消すと取り直しになります
+      - caddy-config:/config
+    depends_on:
+      - program-maker
+
 volumes:
   program-data:
+  caddy-data:
+  caddy-config:

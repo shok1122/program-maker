@@ -1,0 +1,23 @@
+# Let's Encrypt でサーバ証明書を自動取得・自動更新するリバースプロキシの設定。
+#
+# ドメイン名とメールアドレスは .env の SITE_ADDRESS / ACME_EMAIL から渡ります。
+# 80 番と 443 番が外から到達できれば、初回起動時に HTTP-01 チャレンジで証明書を取得し、
+# 以後は有効期限が近づくたびに自動で更新します（cron の設定は要りません）。
+# 取得した証明書と鍵は caddy-data ボリュームに残るので、再起動しても取り直しになりません。
+
+{
+	email {$ACME_EMAIL}
+	acme_ca {$ACME_CA}
+}
+
+{$SITE_ADDRESS} {
+	encode zstd gzip
+
+	# HTTP から HTTPS へのリダイレクトと X-Forwarded-* の付与は Caddy が自動で行います。
+	# アプリ側は .env で COOKIE_SECURE=1 と TRUST_PROXY=1 を有効にしてください。
+	reverse_proxy program-maker:8080
+
+	# HSTS。一度返すとそのドメインへの HTTP 接続をブラウザが拒否するようになるので、
+	# 証明書が問題なく取れることを確かめてから有効にしてください。
+	# header Strict-Transport-Security "max-age=31536000; includeSubDomains"
+}

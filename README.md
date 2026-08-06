@@ -32,6 +32,49 @@ make build && make up   # docker compose build → up -d
 
 止めるときは `make down`、データも消すときは `make down && make clean` です。
 
+## とりあえず HTTPS で動かす
+
+ドメイン名があるなら、[Caddy](https://caddyserver.com/) を一緒に起動して
+**Let's Encrypt のサーバ証明書を自動で取得・自動で更新**できます（certbot も cron も要りません）。
+前提は、サーバの **80番と443番**がインターネットから到達できることと、
+使うドメインの **DNS（A / AAAA レコード）がこのサーバを向いている**ことの2つです。
+
+```bash
+cp .env.example .env
+make password           # 管理者パスワードを決める → 出た1行を .env に貼り付ける（必須）
+vi config/types.json    # 発表種別（名称・発表時間・質疑応答時間）を用意する
+```
+
+続けて `.env` を開き、次の5つの項目を書き換えます。どれも `.env.example` に用意されているので、
+行を足すのではなく `=` の右側を書き換えてください。
+
+```bash
+SITE_ADDRESS=program.example.ac.jp   # 証明書を取得するドメイン名（既定は空）
+ACME_EMAIL=admin@example.ac.jp       # Let's Encrypt に登録するメールアドレス（既定は空）
+COOKIE_SECURE=1                      # Cookie に Secure を付ける（既定は 0）
+TRUST_PROXY=1                        # 接続元をプロキシ経由で判定する（既定は 0）
+HOST_BIND=127.0.0.1                  # 平文の 8080 番を外に出さない（既定は 0.0.0.0）
+```
+
+ここまで済んだら起動します。
+
+```bash
+make build && make up-https
+make logs-https         # certificate obtained successfully が出れば完了
+```
+
+- 参加登録ページ … `https://program.example.ac.jp/` ← 発表者に配るURL
+- 管理画面 … `https://program.example.ac.jp/admin` ← `make password` で決めたパスワードでログイン
+
+HTTP でのアクセスは Caddy が HTTPS へリダイレクトします。使い方の流れと止め方は
+[とりあえず動かす](#とりあえず動かす)と同じです。
+
+> [!TIP]
+> 設定を試している間は `.env` の `ACME_CA` をステージング環境に向けてください。
+> 本番の Let's Encrypt には**1ドメインあたり週50回**の発行上限があります。
+> 証明書が取れないときや別のリバースプロキシ（nginx など）を使う場合は
+> [HTTPS で公開する（Let's Encrypt）](#https-で公開するlets-encrypt)を見てください。
+
 ## 画面構成
 
 | 画面 | URL | 認証 |
@@ -151,6 +194,51 @@ ADMIN_PASSWORD_HASH=scrypt:ln=14,r=8,p=1:iNCcJ1w9SM9DJ3ru0dQzGA:9tvSbxaMd0kwuzUm
 `ADMIN_PASSWORD`（平文）も当面は受け付けますが、起動時に警告が出ます。
 `ADMIN_PASSWORD_HASH` を設定して `ADMIN_PASSWORD` は削除してください。
 
+### HTTPS で公開する（Let's Encrypt）
+
+インターネットに公開する場合は、リバースプロキシの [Caddy](https://caddyserver.com/) を一緒に起動すると
+**Let's Encrypt のサーバ証明書を自動で取得し、期限が近づくたびに自動で更新**します。
+cron も certbot の実行も要りません。設定は [`Caddyfile`](Caddyfile) にあります。
+
+前提は次の2つです。
+
+- サーバの **80番と443番** がインターネットから到達できる（HTTP-01 チャレンジに80番を使います）
+- 使うドメインの DNS（A / AAAA レコード）が**このサーバを向いている**
+
+`.env` を次のように設定して、`make up-https` で起動します。
+
+```bash
+# .env
+SITE_ADDRESS=program.example.ac.jp   # 証明書を取得するドメイン名
+ACME_EMAIL=admin@example.ac.jp       # Let's Encrypt のアカウントに登録するメールアドレス
+COOKIE_SECURE=1                      # Cookie に Secure を付ける
+TRUST_PROXY=1                        # 接続元をプロキシ経由で判定する
+HOST_BIND=127.0.0.1                  # 平文の 8080 番を外に出さない
+```
+
+```bash
+make up-https      # docker compose --profile https up -d
+make logs-https    # 証明書が取れたかを追う
+```
+
+`certificate obtained successfully` がログに出れば完了です。以後 `https://program.example.ac.jp/` が
+参加登録ページ、`https://program.example.ac.jp/admin` が管理画面になります。
+HTTP でのアクセスは Caddy が HTTPS へリダイレクトします。
+
+- `make up-https` を使わない `make up` は今までどおり平文の HTTP のままです。Caddy は起動しません。
+- 取得した証明書と秘密鍵は `caddy-data` ボリュームに残ります。`make down` して起動し直しても取り直しにはなりません。
+- 動作確認のうちは `.env` の `ACME_CA` でステージング環境に向けてください。本番の Let's Encrypt には
+  **1ドメインあたり週50回**の発行上限があり、設定を直しながら試すと使い切ってしまいます。
+  本番に切り替えるときは `ACME_CA` をコメントに戻し、`docker volume rm program-maker_caddy-data` で
+  テスト用の証明書を捨ててから起動し直してください。
+- `TRUST_PROXY=1` にしても、ログイン試行回数の制限を接続元の詐称で迂回されることはありません。
+  Caddy は信頼していない接続元から届いた `X-Forwarded-For` を実際の接続元で上書きするためです。
+- 証明書が取れないときは `make logs-https` を見てください。80番が塞がれている（大学のネットワークなど）、
+  DNS がまだ伝わっていない、といった原因が大半です。80番を開けられない場合は HTTP-01 が使えないので、
+  DNS-01 チャレンジに対応した Caddy イメージを別途ビルドする必要があります。
+- 別のリバースプロキシ（nginx など）が既にある場合は、Caddy を使わずに `HOST_BIND=127.0.0.1` で
+  8080番を localhost に閉じ、そのプロキシから転送してください。`COOKIE_SECURE=1` と `TRUST_PROXY=1` は同じく必要です。
+
 ### 発表種別のカスタマイズ（`config/types.json`）
 
 参加登録ページのドロップダウンに並ぶ**発表種別**は、コンテナを起動する前に
@@ -215,6 +303,10 @@ docker compose restart
 | `COOKIE_SECURE` | `0` | HTTPS で公開する場合は `1`（Cookie に `Secure` を付けます） |
 | `SESSION_HOURS` | `12` | ログインの有効時間 |
 | `TRUST_PROXY` | `0` | リバースプロキシ配下でログイン試行回数を接続元ごとに数えたい場合は `1` |
+| `HOST_PORT` / `HOST_BIND` | `8080` / `0.0.0.0` | ホスト側の公開先（docker compose のみ）。HTTPS で公開するなら `HOST_BIND=127.0.0.1` |
+| `SITE_ADDRESS` | 空 | 証明書を取得するドメイン名（`make up-https` のとき必須）。[HTTPS で公開する](#https-で公開するlets-encrypt) |
+| `ACME_EMAIL` | 空 | Let's Encrypt のアカウントに登録するメールアドレス（同上） |
+| `ACME_CA` | Let's Encrypt 本番 | ACME サーバー。動作確認中はステージング環境に向けます |
 
 ### バックアップ
 
@@ -243,7 +335,8 @@ Node.js 22 以降で、追加パッケージのインストールは不要です
 - ログインの失敗は接続元ごとに15分あたり10回までに制限されます。
 - パスワードは平文では保持せず、`.htpasswd` と同じくハッシュ値（ソルト付き scrypt）だけを設定に置きます
   （[管理者パスワード](#管理者パスワード)）。
-- 単一の共有パスワードによる簡易的な保護です。インターネットに公開する場合はHTTPS（`COOKIE_SECURE=1`）を前提にしてください。
+- 単一の共有パスワードによる簡易的な保護です。インターネットに公開する場合はHTTPS（`COOKIE_SECURE=1`）を前提にしてください
+  （[HTTPS で公開する](#https-で公開するlets-encrypt) に Let's Encrypt での手順があります）。
 
 ## デモ（GitHub Pages）
 
@@ -277,6 +370,7 @@ server/
   store.js          JSONファイルへの永続化
 config/
   types.json        発表種別の定義（起動前に編集する）
+Caddyfile           HTTPS で公開する場合のリバースプロキシ設定（Let's Encrypt）
 Dockerfile / docker-compose.yml / .env.example
 ```
 
