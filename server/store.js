@@ -92,7 +92,7 @@ function defaultData(seed) {
     settings: {
       eventName: seed.eventName || "研究発表会",
       notice: "",
-      registrationOpen: true,
+      registrationOpen: false,
       registrationKey: seed.registrationKey || "",
       types: normalizeTypes(DEFAULT_TYPES)
     },
@@ -115,7 +115,7 @@ function migrate(data, seed) {
     settings: {
       eventName: typeof s.eventName === "string" ? s.eventName : base.settings.eventName,
       notice: typeof s.notice === "string" ? s.notice : "",
-      registrationOpen: s.registrationOpen !== false,
+      registrationOpen: s.registrationOpen === true,
       registrationKey: typeof s.registrationKey === "string" ? s.registrationKey : "",
       types: types && types.length
         ? types.map(t => ({
