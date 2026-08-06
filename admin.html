@@ -55,6 +55,7 @@
       <div class="hint" style="margin:-10px 0 14px">
         タイムテーブルに反映するには「タイムテーブル」タブの<b>登録一覧から読み込む</b>を使ってください（所属まで反映されます）。
         エクスポートしたCSVも同タブのCSVインポートで読み込めますが、所属は別列のため反映されません。
+        <br><b>発表日</b>は「設定」タブで<b>会期</b>を指定すると選べるようになります。選んだ発表日は、その場で保存されます。
       </div>
       <div class="tablewrap">
         <div class="scroll">
@@ -62,6 +63,7 @@
             <thead><tr>
               <th class="num">#</th>
               <th style="width:120px">種別</th>
+              <th style="width:138px">発表日</th>
               <th>タイトル</th>
               <th style="width:150px">発表者</th>
               <th style="width:190px">所属</th>
@@ -79,22 +81,26 @@
 
     <!-- ============ タイムテーブル ============ -->
     <section class="tabpanel" role="tabpanel" id="panel-tt" aria-labelledby="tab-tt" hidden>
+      <div class="tt-days" id="tt-days" hidden></div>
+
       <div class="tt-layout">
 
         <div class="tt-side">
           <div class="panel">
-            <h2>登録データ</h2>
+            <h2>登録データ<span class="tail day-tag"></span></h2>
+            <div class="scope" id="tt-load-scope" hidden></div>
             <button class="btn block" id="tt-load-regs">登録一覧から読み込む</button>
             <div class="hint" id="tt-load-hint"></div>
           </div>
 
           <div class="panel">
-            <h2>基本設定</h2>
+            <h2>基本設定<span class="tail day-tag"></span></h2>
             <div class="field">
               <label for="tt-start">開始時刻</label>
               <input type="time" id="tt-start" value="09:00">
             </div>
-            <div class="hint">開始時刻から順に発表コマを並べ、固定枠の前で区切ります。終了時刻は発表の件数と固定枠から決まります。</div>
+            <div class="hint">開始時刻から順に発表コマを並べ、固定枠の前で区切ります。終了時刻は発表の件数と固定枠から決まります。
+              <br>会期が複数日ある場合、この基本設定と休憩は<b>発表日ごと</b>に保存されます。</div>
 
             <hr class="panel-sep">
 
@@ -121,7 +127,7 @@
           </div>
 
           <div class="panel">
-            <h2>休憩</h2>
+            <h2>休憩<span class="tail day-tag"></span></h2>
             <div class="slots" id="tt-slots"></div>
             <button class="btn ghost block small" id="tt-add-slot" style="margin-top:11px">＋ 休憩を追加</button>
             <div class="hint">発表のあいだに入れる休憩の時間帯を、いくつでも定義できます。<br>基調講演・授賞式など発表以外のプログラムは、<b>設定</b>タブで発表種別として定義してください。</div>
@@ -149,13 +155,14 @@
           <div class="hint" style="margin:-10px 0 14px">
             CSVは「開始時刻・終了時刻」の列が無くても読み込めます（例：<code>発表種別,タイトル,発表者</code>）。
             その場合はCSVの行順のまま、基本設定の<b>開始時刻</b>から順に配置されます。
+            <br>CSVの入出力と印刷 / PDFは、いま表示している<b>発表日</b>のぶんだけを対象にします。
           </div>
 
           <div class="notice" id="tt-notice"></div>
 
           <div class="board">
             <div class="board-head">
-              <span class="ttl">Timetable</span>
+              <span class="ttl" id="tt-title">Timetable</span>
               <div class="summary" id="tt-summary" style="font-size:11px;gap:14px"></div>
               <div class="legend" id="tt-legend"></div>
             </div>
@@ -206,6 +213,14 @@
             <div class="field">
               <label for="st-event">イベント名</label>
               <input type="text" id="st-event" maxlength="120">
+            </div>
+            <div class="field">
+              <label for="st-date-start">会期<span class="opt">任意・開始日／終了日</span></label>
+              <div class="row2">
+                <input type="date" id="st-date-start" aria-label="会期の開始日">
+                <input type="date" id="st-date-end" aria-label="会期の終了日">
+              </div>
+              <div class="hint" id="st-date-hint"></div>
             </div>
             <div class="field">
               <label for="st-notice">案内文<span class="opt">任意</span></label>

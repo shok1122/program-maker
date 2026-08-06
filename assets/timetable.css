@@ -4,6 +4,48 @@
 .tt-layout{display:grid;grid-template-columns:340px 1fr;gap:24px;align-items:start}
 @media (max-width:920px){ .tt-layout{grid-template-columns:1fr} }
 
+/* ---- 発表日の切り替え（会期が複数日のときだけ出る） ---- */
+.tt-days{
+  display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin:0 0 18px;
+  padding:8px 10px;background:var(--paper);border:1px solid var(--border);border-radius:11px;
+}
+.tt-days .lbl{
+  font-size:10.5px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--ink-faint);margin:0 4px 0 4px;
+}
+.day-btn{
+  display:inline-flex;align-items:center;gap:7px;padding:6px 11px;font-size:13px;
+  background:transparent;border:1px solid transparent;color:var(--ink-soft);border-radius:8px;
+}
+.day-btn:hover{background:var(--panel);color:var(--ink)}
+.day-btn.on{background:var(--accent-soft);border-color:#c7d2fe;color:var(--accent)}
+.day-btn .n{
+  font-family:var(--mono);font-size:10.5px;font-weight:600;padding:1px 6px;border-radius:10px;
+  background:var(--panel-2);color:var(--ink-faint);
+}
+.day-btn.on .n{background:var(--paper);color:var(--accent)}
+.day-btn .undated{font-style:italic}
+
+/* ---- 上書きする発表日の選択（登録一覧から読み込む） ---- */
+.scope{display:flex;flex-direction:column;gap:6px;margin-bottom:12px}
+.scope-head{display:flex;align-items:center;gap:9px}
+.scope-head .mini{margin:0;flex:1 1 auto}
+.scope .link{
+  background:transparent;border:none;padding:1px 2px;font-size:11px;font-weight:600;
+  color:var(--ink-soft);text-decoration:underline;text-underline-offset:2px;
+}
+.scope .link:hover{color:var(--accent)}
+.scope label{
+  display:flex;align-items:center;gap:8px;cursor:pointer;
+  padding:6px 9px;border:1px solid var(--border);border-radius:8px;background:var(--panel);
+  font-size:12.5px;font-weight:600;color:var(--ink);
+}
+.scope label:hover{border-color:var(--border-strong)}
+.scope label.on{border-color:var(--accent);background:var(--accent-soft);color:var(--accent)}
+.scope input{width:15px;height:15px;margin:0;flex:0 0 auto;accent-color:var(--accent);cursor:pointer}
+.scope .n{margin-left:auto;font-family:var(--mono);font-size:11px;color:var(--ink-faint)}
+.scope label.on .n{color:var(--accent)}
+
 /* ---- 発表種別エディタ ---- */
 .types{display:flex;flex-direction:column;gap:9px}
 .type-row{
@@ -55,6 +97,7 @@
   padding:14px 18px;border-bottom:1px solid var(--border);
 }
 .board-head .ttl{font-size:13px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-soft)}
+.board-head .ttl.day{font-size:15px;letter-spacing:.02em;text-transform:none;color:var(--ink)}
 .legend{display:flex;gap:14px;flex-wrap:wrap;justify-content:flex-end;font-size:11px;color:var(--ink-soft)}
 .legend span{display:inline-flex;align-items:center;gap:5px}
 .legend i{width:9px;height:9px;border-radius:2px;display:inline-block}
@@ -162,10 +205,12 @@ tr.row-emph .title-in:hover,tr.row-emph .sub-in:hover{border-color:var(--border-
   .wrap{max-width:none;padding:0}
   .tt-layout{display:block}
   .tt-side,.toolbar,.tabs,.demo-bar,.board-head .legend,.notice,.hint,.kill,
-  .board-foot,#tt-actions,.masthead .tools{display:none !important}
+  .board-foot,#tt-actions,.masthead .tools,.tt-days{display:none !important}
   .masthead{border-color:#000}
   .masthead .summary{display:none}
   .board{border:none;border-radius:0}
+  /* 発表日の見出しは表の左端に揃える */
+  .board-head{padding:2px 0 8px;border-color:#000}
   .title-in,.sub-in{border:none;box-shadow:none;padding:2px 0}
   .board table tbody td,.board table thead th{border-color:#000}
   tr.row-gap{display:none}

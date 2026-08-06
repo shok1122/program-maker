@@ -44,6 +44,13 @@
     return false;
   }
 
+  /* 会期（設定タブで指定した開始日〜終了日を1日ずつ展開したもの）。未設定なら空配列。 */
+  const eventDates = () => (state.settings ? TM.eventDates(state.settings) : []);
+  const ttSource = () => ({
+    registrations: state.registrations, types: state.settings.types, dates: eventDates()
+  });
+  const dayLabel = (iso, i, n) => (n > 1 ? `${i + 1}日目 ` : "") + TM.dateLabel(iso);
+
   function fmtStamp(iso) {
     const d = new Date(iso);
     if (isNaN(d.getTime())) return "";
@@ -53,10 +60,15 @@
 
   function renderMasthead() {
     const s = state.settings;
+    const dates = eventDates();
     $("#adm-event").textContent = s.eventName;
     document.title = s.eventName + " 管理画面";
     $("#adm-summary").innerHTML =
       `<span>登録 <b>${state.registrations.length}</b> 件</span>` +
+      (dates.length
+        ? `<span>会期 <b>${TM.dateLabel(dates[0], true)}${
+            dates.length > 1 ? "–" + TM.dateLabel(dates[dates.length - 1]) : ""}</b></span>`
+        : "") +
       `<span>受付 <b>${s.registrationOpen ? "受付中" : "停止"}</b></span>` +
       `<span>キー <b>${s.registrationKey ? "設定あり" : "なし"}</b></span>`;
     $("#tab-regs-n").textContent = String(state.registrations.length);
@@ -77,7 +89,7 @@
     if (which === 1 && !ttMounted) {
       ttMounted = true;
       Timetable.mount({
-        source: { registrations: state.registrations, types: state.settings.types },
+        source: ttSource(),
         draft: state.timetable,
         saveDraft: async draft => {
           state.timetable = draft;
@@ -99,7 +111,7 @@
   });
 
   function syncTimetableSource() {
-    if (ttMounted) Timetable.setSource({ registrations: state.registrations, types: state.settings.types });
+    if (ttMounted) Timetable.setSource(ttSource());
   }
 
   /* ---------------- 登録一覧 ---------------- */
@@ -109,6 +121,23 @@
     ).join("");
   }
 
+  /* 発表日のドロップダウン。会期が未設定なら選べるものが無いので "—" を出す。 */
+  function dateOptions(selected) {
+    const dates = eventDates();
+    const cur = dates.indexOf(selected) >= 0 ? selected : "";
+    return `<option value=""${cur ? "" : " selected"}>未定</option>` +
+      dates.map((d, i) =>
+        `<option value="${d}"${d === cur ? " selected" : ""}>${esc(dayLabel(d, i, dates.length))}</option>`
+      ).join("");
+  }
+  function dateCell(rec, editing) {
+    if (!eventDates().length)
+      return `<td class="date-cell"><span class="date-none" title="「設定」タブで会期を指定すると選べます">—</span></td>`;
+    const attr = editing ? 'data-f="date"' : `class="date-sel" data-id="${esc(rec.id)}"`;
+    return `<td class="date-cell"><select ${attr} aria-label="発表日">${
+      dateOptions((rec && rec.date) || "")}</select></td>`;
+  }
+
   function editorRow(rec, index) {
     const r = rec || { typeId: "", title: "", speaker: "", affiliation: "" };
     return `<tr class="editing" data-edit="${esc(r.id || "")}">
@@ -116,6 +145,7 @@
       <td><select data-f="typeId">
         <option value="">選択</option>${typeOptions(r.typeId)}
       </select></td>
+      ${dateCell(r, true)}
       <td><input type="text" data-f="title" maxlength="300" value="${esc(r.title)}" placeholder="発表タイトル"></td>
       <td><input type="text" data-f="speaker" maxlength="200" value="${esc(r.speaker)}" placeholder="山田 太郎"></td>
       <td><input type="text" data-f="affiliation" maxlength="200" value="${esc(r.affiliation)}" placeholder="○○大学"></td>
@@ -143,6 +173,7 @@
       rows.push(`<tr data-id="${esc(r.id)}">
         <td class="num">${i + 1}</td>
         <td><span class="badge talk">${esc(r.typeName || "—")}</span></td>
+        ${dateCell(r, false)}
         <td style="font-weight:600">${esc(r.title)}</td>
         <td>${esc(r.speaker)}</td>
         <td style="color:var(--ink-soft)">${esc(r.affiliation)}</td>
@@ -159,7 +190,7 @@
     if (keep) {
       const next = body.querySelector("tr.editing");
       if (next && next.dataset.edit === keep.key) {
-        for (const f of ["typeId", "title", "speaker", "affiliation"]) {
+        for (const f of ["typeId", "date", "title", "speaker", "affiliation"]) {
           const el = next.querySelector(`[data-f="${f}"]`);
           if (el) el.value = keep.values[f];
         }
@@ -175,7 +206,8 @@
       const el = tr.querySelector(`[data-f="${f}"]`);
       return el ? el.value : "";
     };
-    return { typeId: get("typeId"), title: get("title"), speaker: get("speaker"), affiliation: get("affiliation") };
+    return { typeId: get("typeId"), date: get("date"),
+             title: get("title"), speaker: get("speaker"), affiliation: get("affiliation") };
   }
 
   async function saveEditor(tr) {
@@ -235,6 +267,37 @@
     if (act === "save") { saveEditor(tr); return; }
   });
 
+  /* 一覧の発表日は編集モードに入らずその場で保存する。 */
+  $("#rg-body").addEventListener("change", async e => {
+    const sel = e.target.closest("select.date-sel");
+    if (!sel) return;
+    const id = sel.dataset.id;
+    const rec = state.registrations.find(r => r.id === id);
+    if (!rec) return;
+    const prev = rec.date || "";
+    const next = sel.value;
+    if (prev === next) return;
+    sel.disabled = true;
+    try {
+      const res = await TM.updateRegistration(id, {
+        typeId: rec.typeId, title: rec.title, speaker: rec.speaker,
+        affiliation: rec.affiliation, date: next
+      });
+      const i = state.registrations.findIndex(r => r.id === id);
+      if (i >= 0) state.registrations[i] = res.registration;
+      sel.disabled = false;
+      sel.value = res.registration.date || "";
+      syncTimetableSource();
+      notice(`「${rec.title}」の発表日を${
+        res.registration.date ? TM.dateLabel(res.registration.date, true) : "未定"}にしました。`, "ok");
+    } catch (err) {
+      sel.disabled = false;
+      sel.value = prev;
+      if (handleAuthError(err)) return;
+      notice(err.message || "発表日を変更できませんでした。", "err");
+    }
+  });
+
   $("#rg-add").addEventListener("click", () => {
     state.adding = true;
     state.editingId = null;
@@ -250,10 +313,11 @@
     return /[",\n\r]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v;
   }
   $("#rg-export").addEventListener("click", () => {
-    const header = ["発表種別", "タイトル", "発表者", "所属", "登録日時"];
+    const header = ["発表種別", "発表日", "タイトル", "発表者", "所属", "登録日時"];
     const lines = [header.map(csvCell).join(",")];
     for (const r of state.registrations)
-      lines.push([r.typeName || "", r.title, r.speaker, r.affiliation, fmtStamp(r.createdAt)]
+      lines.push([r.typeName || "", (r.date || "").replace(/-/g, "/"),
+                  r.title, r.speaker, r.affiliation, fmtStamp(r.createdAt)]
         .map(csvCell).join(","));
     const blob = new Blob(["\uFEFF" + lines.join("\r\n")], { type: "text/csv;charset=utf-8" });
     const a = document.createElement("a");
@@ -305,11 +369,34 @@
     }).join("");
   }
 
+  /* 会期の入力欄の下に、いま何日間になるかを出す。 */
+  function renderDateHint() {
+    const dates = TM.eventDates({
+      eventStart: $("#st-date-start").value, eventEnd: $("#st-date-end").value
+    });
+    const el = $("#st-date-hint");
+    if (!dates.length) {
+      el.innerHTML = "未設定のままでも使えます。指定すると、登録一覧で<b>発表日</b>を選べるようになり、"
+                   + "タイムテーブルを発表日ごとに作れます。";
+      return;
+    }
+    const names = dates.length > 6
+      ? [TM.dateLabel(dates[0]), TM.dateLabel(dates[1]), "…", TM.dateLabel(dates[dates.length - 1])]
+      : dates.map(d => TM.dateLabel(d));
+    el.innerHTML = `会期は <b>${dates.length}</b> 日間（${esc(names.join("・"))}）です。`
+      + (dates.length === 1 ? "終了日を空欄にすると開始日と同じ日になります。" : "");
+  }
+  ["st-date-start", "st-date-end"].forEach(id =>
+    $("#" + id).addEventListener("input", renderDateHint));
+
   function fillSettings() {
     const s = state.settings;
     $("#st-open").checked = !!s.registrationOpen;
     $("#st-key").value = s.registrationKey || "";
     $("#st-event").value = s.eventName || "";
+    $("#st-date-start").value = s.eventStart || "";
+    $("#st-date-end").value = s.eventEnd || "";
+    renderDateHint();
     $("#st-notice").value = s.notice || "";
     $("#st-url").value = new URL("index.html", location.href).href;
     draftTypes = s.types.map(t => ({
@@ -353,6 +440,13 @@
 
   $("#st-save").addEventListener("click", async () => {
     if (!draftTypes.length) { notice("種別は1つ以上必要です。", "err"); return; }
+    // 会期を狭めると、そこから外れた発表日は未定に戻る。件数を見せて確認する
+    const next = new Set(TM.eventDates({
+      eventStart: $("#st-date-start").value, eventEnd: $("#st-date-end").value
+    }));
+    const losing = state.registrations.filter(r => r.date && !next.has(r.date)).length;
+    if (losing && !confirm(
+      `会期から外れる発表日が ${losing} 件あります。これらの発表日は「未定」に戻ります。よろしいですか？`)) return;
     const btn = $("#st-save");
     btn.disabled = true;
     setSettingStatus("保存中…");
@@ -362,6 +456,8 @@
         notice: $("#st-notice").value,
         registrationOpen: $("#st-open").checked,
         registrationKey: $("#st-key").value,
+        eventStart: $("#st-date-start").value,
+        eventEnd: $("#st-date-end").value,
         types: draftTypes.map(t => ({
           id: t.id || undefined, name: t.name, talk: t.talk, qa: t.qa, emphasis: !!t.emphasis
         }))
@@ -374,7 +470,9 @@
       renderRegistrations();
       syncTimetableSource();
       setSettingStatus("保存しました。", true);
-      notice("設定を保存しました。", "ok");
+      notice("設定を保存しました。"
+        + (res.cleared ? `会期から外れた ${res.cleared} 件の発表日を「未定」に戻しました。` : ""),
+        res.cleared ? "warn" : "ok");
     } catch (err) {
       if (handleAuthError(err)) return;
       setSettingStatus("保存できませんでした。");

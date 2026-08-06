@@ -14,7 +14,7 @@
 
 window.TM = (function () {
 
-  const DEMO_STORAGE_KEY = "tm-demo-v1";
+  const DEMO_STORAGE_KEY = "tm-demo-v2";
   let MODE = null;
 
   /* ---------------- 共通ユーティリティ ---------------- */
@@ -38,6 +38,52 @@ window.TM = (function () {
     return String(v == null ? "" : v).replace(/\r\n?/g, "\n").trim().slice(0, max);
   }
 
+  /* ---------------- 日付（会期・発表日） ----------------
+     サーバー側 server/store.js と同じ規則。画面からも TM.isoDate / TM.eventDates /
+     TM.dateLabel として使う。 */
+  const MAX_EVENT_DAYS = 60;
+  const DAY_MS = 86400000;
+  const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+  const WEEKDAYS = ["日", "月", "火", "水", "木", "金", "土"];
+
+  function isoDate(v) {
+    const s = String(v == null ? "" : v).trim();
+    if (!ISO_DATE_RE.test(s)) return "";
+    const t = Date.parse(s + "T00:00:00Z");
+    if (!isFinite(t)) return "";
+    return new Date(t).toISOString().slice(0, 10) === s ? s : "";
+  }
+  function normalizePeriod(startRaw, endRaw) {
+    const eventStart = isoDate(startRaw);
+    if (!eventStart) return { eventStart: "", eventEnd: "" };
+    let eventEnd = isoDate(endRaw) || eventStart;
+    if (eventEnd < eventStart) eventEnd = eventStart;
+    return { eventStart, eventEnd };
+  }
+  function daySpan(start, end) {
+    return Math.round((Date.parse(end + "T00:00:00Z") - Date.parse(start + "T00:00:00Z")) / DAY_MS) + 1;
+  }
+  /* 会期を1日ずつの配列に展開する。未設定なら空配列。 */
+  function eventDates(settings) {
+    const p = normalizePeriod(settings && settings.eventStart, settings && settings.eventEnd);
+    if (!p.eventStart) return [];
+    const out = [];
+    const last = Date.parse(p.eventEnd + "T00:00:00Z");
+    for (let t = Date.parse(p.eventStart + "T00:00:00Z"); t <= last && out.length < MAX_EVENT_DAYS; t += DAY_MS)
+      out.push(new Date(t).toISOString().slice(0, 10));
+    return out;
+  }
+  /* "4/10（金）" ／ long=true なら "2026/04/10（金）" */
+  function dateLabel(iso, long) {
+    const d = isoDate(iso);
+    if (!d) return "";
+    const t = new Date(d + "T00:00:00Z");
+    const mm = t.getUTCMonth() + 1, dd = t.getUTCDate(), w = WEEKDAYS[t.getUTCDay()];
+    return long
+      ? `${t.getUTCFullYear()}/${String(mm).padStart(2, "0")}/${String(dd).padStart(2, "0")}（${w}）`
+      : `${mm}/${dd}（${w}）`;
+  }
+
   /* サーバー側と同じ検証。デモ版でも同じ手応えになるようにする。 */
   function buildRegistration(settings, input, existing) {
     const type = (settings.types || []).find(t => t.id === String(input.typeId || ""));
@@ -48,11 +94,15 @@ window.TM = (function () {
     if (!title) throw fail("タイトルを入力してください。");
     if (!speaker) throw fail("発表者を入力してください。");
     if (!affiliation) throw fail("所属を入力してください。");
+    // 発表日は会期の中の日付だけ。date を送ってこない場合は既存の値を保つ
+    let date = existing ? isoDate(existing.date) : "";
+    if ("date" in input) date = isoDate(input.date);
+    if (!eventDates(settings).includes(date)) date = "";
     const now = new Date().toISOString();
     return {
       id: existing ? existing.id : uid(),
       typeId: type.id, typeName: type.name,
-      title, speaker, affiliation,
+      title, speaker, affiliation, date,
       createdAt: existing ? existing.createdAt : now,
       updatedAt: now
     };
@@ -120,21 +170,23 @@ window.TM = (function () {
       { id: uid(), name: "発表B", talk: 7, qa: 3 },
       { id: uid(), name: "ポスター発表", talk: 0, qa: 0 }
     ];
+    const days = ["2026-04-10", "2026-04-11"];
+    // [種別, タイトル, 発表者, 所属, 発表日(days の位置)]
     const samples = [
-      [0, "Title 1", "Name 1", "XXX大学"],
-      [1, "Title 2", "Name 2", "XXX大学"],
-      [0, "Title 3", "Name 3", "YYY大学"],
-      [1, "Title 4", "Name 4", "YYY大学"],
-      [0, "Title 5", "Name 5", "XXX大学"],
-      [1, "Title 6", "Name 6", "XXX大学"],
-      [0, "Title 7", "Name 7", "YYY大学"],
-      [1, "Title 8", "Name 8", "YYY大学"],
-      [0, "Title 9", "Name 9", "XXX大学"],
-      [1, "Title 10", "Name 10", "XXX大学"],
-      [2, "Title 11", "Name 11", "XXX大学"],
-      [2, "Title 12", "Name 12", "XXX大学"],
-      [2, "Title 13", "Name 13", "YYY大学"],
-      [2, "Title 14", "Name 14", "YYY大学"]
+      [0, "Title 1", "Name 1", "XXX大学", 0],
+      [1, "Title 2", "Name 2", "XXX大学", 0],
+      [0, "Title 3", "Name 3", "YYY大学", 0],
+      [1, "Title 4", "Name 4", "YYY大学", 0],
+      [0, "Title 5", "Name 5", "XXX大学", 0],
+      [1, "Title 6", "Name 6", "XXX大学", 0],
+      [0, "Title 7", "Name 7", "YYY大学", 0],
+      [1, "Title 8", "Name 8", "YYY大学", 1],
+      [0, "Title 9", "Name 9", "XXX大学", 1],
+      [1, "Title 10", "Name 10", "XXX大学", 1],
+      [2, "Title 11", "Name 11", "XXX大学", 0],
+      [2, "Title 12", "Name 12", "XXX大学", 0],
+      [2, "Title 13", "Name 13", "YYY大学", 1],
+      [2, "Title 14", "Name 14", "YYY大学", 1]
     ];
     const t0 = Date.UTC(2026, 3, 10, 1, 0, 0);
     return {
@@ -145,13 +197,15 @@ window.TM = (function () {
               + "内容の修正・取り消しは事務局までご連絡ください。",
         registrationOpen: true,
         registrationKey: "demo",
+        eventStart: days[0],
+        eventEnd: days[days.length - 1],
         types
       },
       registrations: samples.map((s, i) => ({
         id: uid(),
         typeId: types[s[0]].id,
         typeName: types[s[0]].name,
-        title: s[1], speaker: s[2], affiliation: s[3],
+        title: s[1], speaker: s[2], affiliation: s[3], date: days[s[4]],
         createdAt: new Date(t0 + i * 3600e3).toISOString(),
         updatedAt: new Date(t0 + i * 3600e3).toISOString()
       })),
@@ -206,6 +260,13 @@ window.TM = (function () {
       if ("notice" in settings) s.notice = multiLine(settings.notice, LIMITS.notice);
       if ("registrationOpen" in settings) s.registrationOpen = !!settings.registrationOpen;
       if ("registrationKey" in settings) s.registrationKey = oneLine(settings.registrationKey, LIMITS.key);
+      if ("eventStart" in settings || "eventEnd" in settings) {
+        const p = normalizePeriod("eventStart" in settings ? settings.eventStart : s.eventStart,
+                                  "eventEnd" in settings ? settings.eventEnd : s.eventEnd);
+        if (p.eventStart && daySpan(p.eventStart, p.eventEnd) > MAX_EVENT_DAYS)
+          throw fail(`会期は最大${MAX_EVENT_DAYS}日までです。`);
+        s.eventStart = p.eventStart; s.eventEnd = p.eventEnd;
+      }
       if (Array.isArray(settings.types)) {
         const seen = new Set();
         const next = settings.types.map((t, i) => {
@@ -227,7 +288,15 @@ window.TM = (function () {
           if (t) r.typeName = t.name;
         }
       }
-      return { ok: true, settings: s };
+      // 会期の外に出てしまった発表日は未定に戻す
+      const days = new Set(eventDates(s));
+      let cleared = 0;
+      for (const r of data.registrations) {
+        const d = isoDate(r.date);
+        if (d && !days.has(d)) cleared++;
+        r.date = days.has(d) ? d : "";
+      }
+      return { ok: true, settings: s, cleared };
     })),
     addRegistration: input => later(demoMutate(data => {
       const rec = buildRegistration(data.settings, input, null);
@@ -288,6 +357,7 @@ window.TM = (function () {
 
   const api = {
     init,
+    isoDate, eventDates, dateLabel,
     mode: () => MODE,
     isDemo: () => MODE === "demo",
     resetDemo: () => (MODE === "demo" ? demoApi.resetDemo() : Promise.resolve({ ok: false }))

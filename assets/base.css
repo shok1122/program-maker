@@ -79,12 +79,12 @@ header.masthead{
 .row2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 @media (max-width:560px){ .row2{grid-template-columns:1fr} }
 
-input[type=time],input[type=number],input[type=text],input[type=password],select,textarea{
+input[type=time],input[type=date],input[type=number],input[type=text],input[type=password],select,textarea{
   width:100%;font-family:inherit;font-size:14px;color:var(--ink);
   background:var(--paper);border:1px solid var(--border-strong);border-radius:7px;
   padding:8px 9px;transition:border-color .12s,box-shadow .12s;
 }
-input[type=time],input[type=number]{font-family:var(--mono)}
+input[type=time],input[type=date],input[type=number]{font-family:var(--mono)}
 textarea{min-height:78px;resize:vertical;line-height:1.6}
 input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
 input:disabled,select:disabled,textarea:disabled{background:var(--panel-2);color:var(--ink-faint);cursor:not-allowed}
@@ -181,6 +181,10 @@ tbody tr:hover{background:var(--panel)}
 .stamp{font-family:var(--mono);font-size:11px;color:var(--ink-faint);white-space:nowrap}
 .rowacts{white-space:nowrap;text-align:right;width:1%}
 .rowacts button{margin-left:5px}
+/* 登録一覧の発表日（ドロップダウン） */
+.date-cell{width:1%;white-space:nowrap}
+.date-cell select{padding:5px 7px;font-size:12.5px;min-width:124px}
+.date-none{font-family:var(--mono);font-size:12px;color:var(--ink-faint)}
 .empty-state{padding:44px 20px;text-align:center;color:var(--ink-faint)}
 .empty-state b{display:block;color:var(--ink-soft);margin-bottom:4px;font-size:15px}
 

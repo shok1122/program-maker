@@ -3,7 +3,12 @@
 /* タイムテーブル作成ツール（管理画面の「タイムテーブル」タブ）。
    参加登録の一覧から発表順を受け取り、開始時刻・固定枠に合わせてコマを並べる。
    CSVの入出力と手動並べ替えは従来どおり。
-   編集内容は下書きとして自動保存される（サーバー版はサーバー、デモ版は localStorage）。 */
+   編集内容は下書きとして自動保存される（サーバー版はサーバー、デモ版は localStorage）。
+
+   会期（設定タブ）が複数日ある場合は、発表日ごとに独立した1日ぶんの下書きを持つ。
+   基本設定・休憩・発表の並びはすべて発表日ごとなので、日によって開始時刻や
+   休憩のタイミングが違ってもよい。表示していない日の下書きは dayStore に退避し、
+   保存するときに全日ぶんをまとめて1つのオブジェクトにする。 */
 
 window.Timetable = (function () {
 
@@ -22,7 +27,14 @@ window.Timetable = (function () {
   let noticeLead = null;  // 次の generate() の通知に前置するメッセージ {msgs,type}
   let absolute = false;   // CSVの時刻をそのまま使っている状態か
 
-  let ctx = null;         // {source:{registrations,types}, saveDraft(draft)}
+  // 発表日ごとの下書き。dayKeys は表示できる発表日（"" は「日付未定」＝会期未設定なら唯一の枠）、
+  // dayKey はいま表示している日。表示中の日の内容は上のモジュール変数が正で、
+  // 表示していない日の下書きだけ dayStore に持つ。
+  let dayKeys = [""];
+  let dayKey = "";
+  let dayStore = {};
+
+  let ctx = null;         // {source:{registrations,types,dates}, saveDraft(draft)}
   let mounted = false;
   let suspendSave = false;
   let saveTimer = null;
@@ -74,6 +86,172 @@ window.Timetable = (function () {
     return m ? { speaker: m[1], affiliation: m[2] } : { speaker: s, affiliation: "" };
   }
 
+  /* ---------------- 発表日 ---------------- */
+  const sourceDates = () =>
+    ((((ctx || {}).source) || {}).dates || []).filter(d => typeof d === "string" && d);
+  const dayName = key => (key ? TM.dateLabel(key) : "日付未定");
+  const dayTitle = key => (key ? TM.dateLabel(key, true) : "日付未定");
+
+  /* その発表日に割り当てられた参加登録。会期が未設定ならすべてが対象。 */
+  function regsForDay(key) {
+    const regs = (((ctx || {}).source) || {}).registrations || [];
+    if (!sourceDates().length) return regs;
+    return regs.filter(r => String(r.date || "") === key);
+  }
+
+  /* 表示できる発表日の一覧。会期の各日に加えて、発表日が未定の登録や
+     未定の下書きが残っている間は「日付未定」も出す。 */
+  function computeDayKeys() {
+    const dates = sourceDates();
+    if (!dates.length) return [""];
+    const keys = dates.slice();
+    const regs = (((ctx || {}).source) || {}).registrations || [];
+    const draft = dayStore[""];
+    if (regs.some(r => !r.date) || dayKey === "" ||
+        (draft && Array.isArray(draft.talkList) && draft.talkList.length))
+      keys.push("");
+    return keys;
+  }
+
+  /* 切り替えボタンに出す件数。まだ開いていない日は、読み込まれる予定の登録数を出す。 */
+  function dayCount(key) {
+    if (key === dayKey) return talkList.length;
+    const d = dayStore[key];
+    if (d && Array.isArray(d.talkList)) return d.talkList.length;
+    return regsForDay(key).length;
+  }
+
+  function renderDays() {
+    const multi = dayKeys.length > 1;
+    const box = $("#tt-days");
+    if (box) {
+      box.hidden = !multi;
+      box.innerHTML = !multi ? "" : `<span class="lbl">発表日</span>` + dayKeys.map((k, i) => {
+        const label = k ? `${i + 1}日目 ${esc(dayName(k))}` : `<span class="undated">日付未定</span>`;
+        return `<button type="button" class="day-btn${k === dayKey ? " on" : ""}"
+          data-day="${esc(k)}" title="${esc(dayTitle(k))}"${k === dayKey ? ` aria-current="true"` : ""}
+          >${label}<span class="n">${dayCount(k)}</span></button>`;
+      }).join("");
+    }
+    const ttl = $("#tt-title");
+    if (ttl) {
+      // 1日開催でも会期を指定していれば日付を見出しに出す（印刷にも出る）
+      const named = multi || !!dayKey;
+      ttl.textContent = named ? dayTitle(dayKey) : "Timetable";
+      ttl.className = named ? "ttl day" : "ttl";
+    }
+    // 左パネルの設定がどの日のものかを見出しに出す
+    document.querySelectorAll("#panel-tt .day-tag")
+      .forEach(el => { el.textContent = multi ? dayTitle(dayKey) : ""; });
+    renderLoadScope();
+  }
+
+  /* いまの日を dayStore に退避してから、別の発表日に切り替える。 */
+  function switchDay(key) {
+    if (key === dayKey || dayKeys.indexOf(key) < 0) return;
+    dayStore[dayKey] = serializeDay();
+    dayKey = key;
+    loadDay();
+    scheduleSave();
+  }
+
+  /* いまの dayKey の内容を画面に反映する。下書きが無ければ登録一覧から取り込む。 */
+  function loadDay() {
+    const d = dayStore[dayKey];
+    noticeLead = null;
+    suspendSave = true;
+    try {
+      if (d) applyDayDraft(d);
+      else { resetDay(); loadFromRegistrations(true); }
+    } finally {
+      suspendSave = false;
+    }
+  }
+
+  /* 会期や登録の変化を受けて発表日の一覧を作り直す。 */
+  function refreshDays() {
+    const before = dayKeys.join("\u0000");
+    dayKeys = computeDayKeys();
+    if (dayKeys.indexOf(dayKey) < 0) {
+      dayStore[dayKey] = serializeDay();   // 会期に戻ってきたときのために残しておく
+      dayKey = dayKeys[0];
+      loadDay();
+      return "switched";
+    }
+    return dayKeys.join("\u0000") !== before ? "changed" : "";
+  }
+
+  /* 1日ぶんの初期値。まだ触っていない発表日はこの内容から始まる。 */
+  const blankDayDraft = () => ({
+    start: "09:00", lunchOn: true, lunchStart: "12:00", lunchEnd: "13:00", showGap: true,
+    talkTypes: [], talkList: [],
+    breakSlots: [{ id: uid(), start: "15:00", end: "15:15", label: "休憩" }],
+    absolute: false, items: null
+  });
+
+  /* 1日ぶんの内容を初期状態に戻す。 */
+  function resetDay() {
+    const d = blankDayDraft();
+    $("#tt-start").value = d.start;
+    $("#tt-lunch-on").checked = d.lunchOn;
+    $("#tt-lunch-start").value = d.lunchStart;
+    $("#tt-lunch-end").value = d.lunchEnd;
+    $("#tt-showgap").checked = d.showGap;
+    breakSlots = d.breakSlots;
+    talkList = [];
+    items = [];
+    absolute = false;
+    renderSlots();
+  }
+
+  /* その発表日に発表が入っているか（まだ開いていない日は空とみなす）。 */
+  const dayHasTalks = key => (key === dayKey
+    ? talkList.length > 0
+    : !!(dayStore[key] && Array.isArray(dayStore[key].talkList) && dayStore[key].talkList.length));
+
+  /* 「登録一覧から読み込む」で上書きする発表日の選択（複数可）。会期が複数日のときだけ出す。 */
+  let scopeSig = "";
+  function renderLoadScope() {
+    const box = $("#tt-load-scope");
+    if (!box) return;
+    const multi = dayKeys.length > 1;
+    box.hidden = !multi;
+    if (!multi) { box.innerHTML = ""; scopeSig = ""; return; }
+
+    // 日と件数が変わったときだけ作り直す。チェックは引き継ぎ、増えた日は選択済みで始める
+    const sig = dayKeys.join("|") + "#" + dayKeys.map(k => regsForDay(k).length).join(",");
+    if (sig !== scopeSig) {
+      scopeSig = sig;
+      const was = {};
+      box.querySelectorAll("input").forEach(i => { was[i.value] = i.checked; });
+      box.innerHTML = `<div class="scope-head">
+          <span class="mini">上書きする発表日</span>
+          <button type="button" class="link" data-all="1">すべて選択</button>
+          <button type="button" class="link" data-all="0">すべて解除</button>
+        </div>`
+        + dayKeys.map((k, i) => `<label><input type="checkbox" value="${esc(k)}"${
+            was[k] === false ? "" : " checked"}>${
+            esc(k ? `${i + 1}日目 ${dayName(k)}` : "日付未定")
+          }<span class="n">${regsForDay(k).length}件</span></label>`).join("");
+    }
+    markLoadScope();
+  }
+  /* チェックの見た目・読み込みボタンの有効／無効・ヒントをそろえる。 */
+  function markLoadScope() {
+    const box = $("#tt-load-scope");
+    if (box) box.querySelectorAll("label")
+      .forEach(l => l.classList.toggle("on", !!l.querySelector("input:checked")));
+    const btn = $("#tt-load-regs");
+    if (btn) btn.disabled = !selectedDays().length;
+    updateLoadHint();
+  }
+  /* いま選ばれている発表日。会期が1日ぶんしか無いときは、その日だけ。 */
+  function selectedDays() {
+    if (dayKeys.length <= 1) return [dayKey];
+    return [...document.querySelectorAll("#tt-load-scope input:checked")]
+      .map(i => i.value).filter(v => dayKeys.indexOf(v) >= 0);
+  }
+
   function readSettings() {
     return {
       start: $("#tt-start").value,
@@ -85,7 +263,8 @@ window.Timetable = (function () {
   }
 
   /* ---------------- 下書きの保存・復元 ---------------- */
-  function serialize() {
+  /* いま表示している1日ぶんの内容。 */
+  function serializeDay() {
     const s = readSettings();
     return {
       start: s.start, lunchOn: s.lunchOn, lunchStart: s.lunchStart, lunchEnd: s.lunchEnd,
@@ -99,9 +278,21 @@ window.Timetable = (function () {
       breakSlots: breakSlots.map(c => ({ id: c.id, start: c.start, end: c.end, label: c.label })),
       // CSVの時刻をそのまま使っている場合だけ、その時刻を保存して復元する
       absolute: absolute,
-      items: absolute ? items.map(it => Object.assign({}, it)) : null,
-      savedAt: new Date().toISOString()
+      items: absolute ? items.map(it => Object.assign({}, it)) : null
     };
+  }
+
+  /* 保存する下書きは全日ぶんをまとめた1つのオブジェクト。
+     会期から外れた日の下書きは、中身があるものだけ残す（会期を戻せばそのまま復帰する）。 */
+  function serialize() {
+    const days = {};
+    for (const k of Object.keys(dayStore)) {
+      const d = dayStore[k];
+      if (dayKeys.indexOf(k) >= 0 || (d && Array.isArray(d.talkList) && d.talkList.length))
+        days[k] = d;
+    }
+    days[dayKey] = serializeDay();
+    return { version: 2, current: dayKey, days, savedAt: new Date().toISOString() };
   }
 
   function scheduleSave() {
@@ -122,68 +313,85 @@ window.Timetable = (function () {
     if (el) { el.textContent = text; el.className = "saved-tag" + (ok ? " on" : ""); }
   }
 
-  function restore(draft) {
+  /* 保存された下書きを dayStore / dayKey に取り込む（画面への反映は loadDay）。
+     発表日を持たなかったころの下書きは、会期があれば初日のものとして引き継ぐ。 */
+  function readDraft(draft) {
+    dayStore = {};
+    dayKey = null;
     if (!draft || typeof draft !== "object") return false;
-    suspendSave = true;
-    try {
-      if (draft.start) $("#tt-start").value = draft.start;
-      $("#tt-lunch-on").checked = draft.lunchOn !== false;
-      if (draft.lunchStart) $("#tt-lunch-start").value = draft.lunchStart;
-      if (draft.lunchEnd) $("#tt-lunch-end").value = draft.lunchEnd;
-      $("#tt-showgap").checked = draft.showGap !== false;
 
-      if (Array.isArray(draft.talkTypes) && draft.talkTypes.length) {
-        talkTypes = draft.talkTypes.map((t, i) => ({
-          id: typeof t.id === "string" && t.id ? t.id : uid(),
-          name: String(t.name == null ? "" : t.name) || `種別${i + 1}`,
-          talk: Math.max(0, parseInt(t.talk, 10) || 0),
-          qa: Math.max(0, parseInt(t.qa, 10) || 0),
-          emphasis: t.emphasis === true
-        }));
-      }
-      const known = new Set(talkTypes.map(t => t.id));
-      if (Array.isArray(draft.talkList)) {
-        talkList = draft.talkList
-          .filter(e => e && known.has(e.typeId))
-          .map(e => {
-            // 所属を分けて持つ前の下書きは「発表者（所属）」の形なので分解して取り込む
-            const who = e.affiliation == null
-              ? splitSpeaker(e.speaker)
-              : { speaker: String(e.speaker == null ? "" : e.speaker), affiliation: String(e.affiliation) };
-            return {
-              id: typeof e.id === "string" && e.id ? e.id : uid(),
-              typeId: e.typeId,
-              title: String(e.title == null ? "" : e.title),
-              speaker: who.speaker,
-              affiliation: who.affiliation
-            };
-          });
-      }
-      applyMasterTypes(true);   // 下書きより設定タブの種別マスタを優先する
-      // customSlots は特別枠があったころの下書き。休憩としてそのまま引き継ぐ
-      const slots = Array.isArray(draft.breakSlots) ? draft.breakSlots : draft.customSlots;
-      if (Array.isArray(slots)) {
-        breakSlots = slots.filter(c => c && typeof c === "object").map(c => ({
-          id: typeof c.id === "string" && c.id ? c.id : uid(),
-          start: String(c.start || ""), end: String(c.end || ""),
-          label: String(c.label == null ? "" : c.label)
-        }));
-      }
-      renderSlots();
+    let src = null;
+    if (draft.days && typeof draft.days === "object" && !Array.isArray(draft.days)) {
+      src = draft.days;
+      if (typeof draft.current === "string") dayKey = draft.current;
+    } else if (Array.isArray(draft.talkList) || draft.start) {
+      const dates = sourceDates();
+      src = {}; src[dates.length ? dates[0] : ""] = draft;
+    }
+    if (!src) return false;
 
-      if (draft.absolute && Array.isArray(draft.items) && draft.items.length) {
-        absolute = true;
-        // 特別枠があったころの下書きの行は休憩として扱う
-        items = draft.items.map(it => it && it.type === "custom" ? Object.assign({}, it, { type: "break" }) : it);
-        applyTypesToItems();
-        render();
-        renderNotice([], "");
-      } else {
-        generate();
-      }
-      return true;
-    } finally {
-      suspendSave = false;
+    let any = false;
+    for (const k of Object.keys(src)) {
+      const v = src[k];
+      if (v && typeof v === "object" && !Array.isArray(v)) { dayStore[String(k)] = v; any = true; }
+    }
+    if (!any) dayKey = null;
+    return any;
+  }
+
+  /* 1日ぶんの下書きを画面に反映する（呼び出し側で suspendSave する）。 */
+  function applyDayDraft(draft) {
+    $("#tt-start").value = draft.start || "09:00";
+    $("#tt-lunch-on").checked = draft.lunchOn !== false;
+    $("#tt-lunch-start").value = draft.lunchStart || "12:00";
+    $("#tt-lunch-end").value = draft.lunchEnd || "13:00";
+    $("#tt-showgap").checked = draft.showGap !== false;
+
+    if (Array.isArray(draft.talkTypes) && draft.talkTypes.length) {
+      talkTypes = draft.talkTypes.map((t, i) => ({
+        id: typeof t.id === "string" && t.id ? t.id : uid(),
+        name: String(t.name == null ? "" : t.name) || `種別${i + 1}`,
+        talk: Math.max(0, parseInt(t.talk, 10) || 0),
+        qa: Math.max(0, parseInt(t.qa, 10) || 0),
+        emphasis: t.emphasis === true
+      }));
+    }
+    const known = new Set(talkTypes.map(t => t.id));
+    talkList = (Array.isArray(draft.talkList) ? draft.talkList : [])
+      .filter(e => e && known.has(e.typeId))
+      .map(e => {
+        // 所属を分けて持つ前の下書きは「発表者（所属）」の形なので分解して取り込む
+        const who = e.affiliation == null
+          ? splitSpeaker(e.speaker)
+          : { speaker: String(e.speaker == null ? "" : e.speaker), affiliation: String(e.affiliation) };
+        return {
+          id: typeof e.id === "string" && e.id ? e.id : uid(),
+          typeId: e.typeId,
+          title: String(e.title == null ? "" : e.title),
+          speaker: who.speaker,
+          affiliation: who.affiliation
+        };
+      });
+    applyMasterTypes(true);   // 下書きより設定タブの種別マスタを優先する
+    // customSlots は特別枠があったころの下書き。休憩としてそのまま引き継ぐ
+    const slots = Array.isArray(draft.breakSlots) ? draft.breakSlots
+                : (Array.isArray(draft.customSlots) ? draft.customSlots : []);
+    breakSlots = slots.filter(c => c && typeof c === "object").map(c => ({
+      id: typeof c.id === "string" && c.id ? c.id : uid(),
+      start: String(c.start || ""), end: String(c.end || ""),
+      label: String(c.label == null ? "" : c.label)
+    }));
+    renderSlots();
+
+    if (draft.absolute && Array.isArray(draft.items) && draft.items.length) {
+      absolute = true;
+      // 特別枠があったころの下書きの行は休憩として扱う
+      items = draft.items.map(it => it && it.type === "custom" ? Object.assign({}, it, { type: "break" }) : it);
+      applyTypesToItems();
+      render();
+      renderNotice([], "");
+    } else {
+      generate();
     }
   }
 
@@ -231,21 +439,16 @@ window.Timetable = (function () {
   }
 
   /* ---------------- 参加登録からの読み込み ---------------- */
-  /* 登録一覧を発表順として取り込む。種別マスタの発表／質疑時間をそのまま使う。 */
-  function loadFromRegistrations(quiet) {
-    const src = (ctx && ctx.source) || { registrations: [], types: [] };
-    const regs = src.registrations || [];
+  /* 登録の一覧を発表順（talkList）に変換する。種別マスタの発表／質疑時間をそのまま使い、
+     マスタから消えた種別は登録に残っている名前で仮に作る。 */
+  function entriesFromRegs(regs) {
     const master = masterTypes();
-
     const byId = new Map(master.map(t => [t.id, t]));
-    const orphanTypes = [];
-    const orphan = [];
+    const orphanTypes = [], orphan = [], list = [];
 
-    talkList = [];
     for (const r of regs) {
       let def = byId.get(r.typeId);
       if (!def) {
-        // 種別マスタから削除された種別。登録に残っている名前で仮の種別を作る
         const name = String(r.typeName || "").trim() || "種別不明";
         def = orphanTypes.find(t => t.name === name);
         if (!def) {
@@ -257,31 +460,106 @@ window.Timetable = (function () {
         }
         byId.set(r.typeId, def);
       }
-      talkList.push({
+      list.push({
         id: uid(), typeId: def.id, title: r.title || "",
         speaker: String(r.speaker || "").trim(),
         affiliation: String(r.affiliation || "").trim()
       });
     }
-
     // マスタの種別はすべて残す（発表が0件でも「＋ 発表を追加」から選べるように）
-    talkTypes = master.concat(orphanTypes);
+    return { list, types: master.concat(orphanTypes), orphan };
+  }
 
+  function orphanNote(msgs, orphan) {
+    if (orphan.length)
+      msgs.push(`種別マスタに無い種別（${[...new Set(orphan)].join("・")}）は登録に残っている名前で仮に作成しました。`);
+    return msgs;
+  }
+
+  /* 表示している発表日の発表を、登録一覧の内容で置き換える。 */
+  function loadFromRegistrations(quiet) {
+    const r = entriesFromRegs(regsForDay(dayKey));
+    talkList = r.list;
+    talkTypes = r.types;
     absolute = false;
     renderSlots();
 
-    const msgs = [`参加登録 ${talkList.length} 件を発表順として読み込みました。`];
-    if (orphan.length)
-      msgs.push(`種別マスタに無い種別（${[...new Set(orphan)].join("・")}）は登録に残っている名前で仮に作成しました。`);
-    if (!quiet) noticeLead = { msgs, type: orphan.length ? "warn" : "ok" };
+    if (!quiet) {
+      const where = dayKeys.length > 1 ? `${dayTitle(dayKey)}の` : "";
+      noticeLead = {
+        msgs: orphanNote([`${where}参加登録 ${r.list.length} 件を発表順として読み込みました。`], r.orphan),
+        type: r.orphan.length ? "warn" : "ok"
+      };
+    }
     generate();
     return talkList.length;
+  }
+
+  /* 表示していない発表日の下書きの発表だけを置き換える。
+     その日の開始時刻・ランチ・休憩・空き時間の設定はそのまま残す。 */
+  function writeDayFromRegs(key) {
+    const r = entriesFromRegs(regsForDay(key));
+    dayStore[key] = Object.assign(dayStore[key] || blankDayDraft(), {
+      talkTypes: r.types.map(t => ({ id: t.id, name: t.name, talk: t.talk, qa: t.qa,
+                                     emphasis: !!t.emphasis })),
+      talkList: r.list,
+      absolute: false,
+      items: null
+    });
+    return r;
+  }
+
+  /* 「登録一覧から読み込む」の本体。選ばれた発表日を、登録一覧の内容で上書きする。
+     表示していない日は下書きに直接書き込み、表示中の日だけ画面に反映する。 */
+  function loadRegistrations(keys) {
+    keys = keys.filter(k => dayKeys.indexOf(k) >= 0);
+    if (!keys.length) return;
+    // 表示中の日が対象外なら、結果が見えるように最初の対象へ移る
+    if (keys.indexOf(dayKey) < 0) switchDay(keys[0]);
+    if (keys.length === 1) { loadFromRegistrations(false); return; }
+
+    const orphan = [], per = [];
+    for (const k of keys) {
+      if (k === dayKey) continue;                 // 表示中の日は下で入れ替える
+      const r = writeDayFromRegs(k);
+      per.push([k, r.list.length]);
+      orphan.push(...r.orphan);
+    }
+    const mine = entriesFromRegs(regsForDay(dayKey));
+    talkList = mine.list;
+    talkTypes = mine.types;
+    absolute = false;
+    per.push([dayKey, mine.list.length]);
+    orphan.push(...mine.orphan);
+    renderSlots();
+
+    const total = per.reduce((n, p) => n + p[1], 0);
+    const order = dayKeys.map(k => per.filter(p => p[0] === k)[0]).filter(Boolean);
+    noticeLead = {
+      msgs: orphanNote([`参加登録 ${total} 件を ${keys.length} つの発表日に読み込みました`
+        + `（${order.map(([k, n]) => `${dayName(k)} ${n}件`).join("・")}）。`], orphan),
+      type: orphan.length ? "warn" : "ok"
+    };
+    generate();
   }
 
   function updateLoadHint() {
     const el = $("#tt-load-hint");
     if (!el || !ctx) return;
-    const n = ((ctx.source || {}).registrations || []).length;
+    if (dayKeys.length > 1) {
+      const sel = selectedDays();
+      if (!sel.length) {
+        el.innerHTML = `上書きする発表日を1つ以上選んでください。`;
+        return;
+      }
+      const undated = dayKeys.indexOf("") >= 0 ? regsForDay("").length : 0;
+      el.innerHTML = `チェックした <b>${sel.length}</b> つの発表日の発表と手動の並べ替えが、`
+        + `登録一覧の内容で置き換わります（開始時刻・ランチ・休憩はその日の設定のまま残ります）。`
+        + (undated ? `<br>発表日が未定の登録が <b>${undated}</b> 件あります。`
+                   + `「登録一覧」タブで発表日を指定してください。` : "");
+      return;
+    }
+    const n = regsForDay(dayKey).length;
     el.innerHTML = n
       ? `現在の登録は <b>${n}</b> 件です。読み込むと、いま表内にある発表と手動の並べ替えは登録一覧の内容で置き換わります。`
       : `登録がまだありません。参加登録ページから申込があると、ここから取り込めます。`;
@@ -395,6 +673,7 @@ window.Timetable = (function () {
   function render() {
     const body = $("#tt-board");
 
+    renderDays();
     renderTypes();
     renderAddBar();
     renderUntimed();
@@ -414,7 +693,7 @@ window.Timetable = (function () {
     $("#tt-summary").innerHTML =
       `<span>発表 <b>${talkItems.length}</b> 件${breakdown}</span>` +
       `<span>枠 <b>${items.filter(i => i.type !== "gap" && i.type !== "talk").length}</b> 件</span>` +
-      (total > 0 ? `<span>会期 <b>${Math.floor(total / 60)}h${String(total % 60).padStart(2, "0")}m</b></span>` : "");
+      (total > 0 ? `<span>所要 <b>${Math.floor(total / 60)}h${String(total % 60).padStart(2, "0")}m</b></span>` : "");
 
     renderLegend();
 
@@ -713,7 +992,7 @@ window.Timetable = (function () {
     const blob = new Blob(["\uFEFF" + lines.join("\r\n")], { type: "text/csv;charset=utf-8" });
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
-    a.download = "timetable.csv";
+    a.download = dayKey ? `timetable-${dayKey}.csv` : "timetable.csv";
     a.click();
     URL.revokeObjectURL(a.href);
     renderNotice(["CSVをエクスポートしました。"], "ok");
@@ -943,10 +1222,35 @@ window.Timetable = (function () {
     });
 
     $("#tt-load-regs").addEventListener("click", () => {
-      const n = ((ctx.source || {}).registrations || []).length;
-      if (talkList.length && !confirm(
-        `いま表にある発表 ${talkList.length} 件を、参加登録 ${n} 件で置き換えます。よろしいですか？`)) return;
-      loadFromRegistrations(false);
+      const keys = selectedDays();
+      if (!keys.length) return;
+      const n = keys.reduce((sum, k) => sum + regsForDay(k).length, 0);
+      if (keys.some(k => dayHasTalks(k))) {
+        let what;
+        if (dayKeys.length <= 1) what = "いま表にある発表";
+        else if (keys.length === 1) what = `${dayTitle(keys[0])}のタイムテーブル`;
+        else if (keys.length === dayKeys.length)
+          what = `すべての発表日（${dayKeys.length}日ぶん）のタイムテーブル`;
+        else what = `選んだ ${keys.length} つの発表日（${keys.map(dayName).join("・")}）のタイムテーブル`;
+        if (!confirm(`${what}を、参加登録 ${n} 件で置き換えます。よろしいですか？`)) return;
+      }
+      loadRegistrations(keys);
+    });
+    // 発表日のチェック（個別／一括）
+    $("#tt-load-scope").addEventListener("change", markLoadScope);
+    $("#tt-load-scope").addEventListener("click", e => {
+      const b = e.target.closest("button[data-all]");
+      if (!b) return;
+      const on = b.dataset.all === "1";
+      $("#tt-load-scope").querySelectorAll("input").forEach(i => { i.checked = on; });
+      markLoadScope();
+    });
+
+    // 発表日の切り替え
+    const days = $("#tt-days");
+    if (days) days.addEventListener("click", e => {
+      const b = e.target.closest(".day-btn");
+      if (b) switchDay(b.dataset.day);
     });
 
     // 発表の追加（表の下）
@@ -1042,18 +1346,18 @@ window.Timetable = (function () {
   function mount(context) {
     ctx = context;
     if (!mounted) { bind(); mounted = true; }
+
+    const restored = readDraft(ctx.draft);
+    dayKeys = computeDayKeys();
+    if (dayKey == null || dayKeys.indexOf(dayKey) < 0)
+      dayKey = dayKeys.filter(k => dayStore[k])[0] || dayKeys[0];
     updateLoadHint();
 
-    const restored = restore(ctx.draft);
-    if (restored) {
-      setSaved("下書きを復元しました", false);
-    } else {
-      // 初回は登録一覧をそのまま発表順として取り込む。
-      // quiet=true で「読み込みました」の通知は出さないが、
-      // 発表0件・時刻の矛盾といった generate() の警告はそのまま見せる。
-      suspendSave = true;
-      try { loadFromRegistrations(true); } finally { suspendSave = false; }
-    }
+    // 下書きの無い発表日は、その日の登録一覧をそのまま発表順として取り込む。
+    // quiet=true で「読み込みました」の通知は出さないが、
+    // 発表0件・時刻の矛盾といった generate() の警告はそのまま見せる。
+    loadDay();
+    if (restored) setSaved("下書きを復元しました", false);
   }
 
   /* 設定タブでの保存・登録の増減を受け取る。発表種別はここが唯一の入り口になるので、
@@ -1061,8 +1365,10 @@ window.Timetable = (function () {
   function setSource(source) {
     if (!ctx) return;
     ctx.source = source;
+    const days = refreshDays();          // 会期・発表日の増減を先に反映する
     updateLoadHint();
-    if (!applyMasterTypes(true)) return;
+    if (days === "switched") { scheduleSave(); return; }
+    if (!applyMasterTypes(true)) { renderDays(); return; }
 
     if (absolute) {
       // CSVの時刻はそのまま。種別の名称・色・強調だけ設定タブの内容に合わせる

@@ -13,6 +13,45 @@ const { randomUUID } = crypto;
 
 const VERSION = 1;
 const TYPE_NAME_MAX = 60;
+const MAX_EVENT_DAYS = 60;          /* 会期の上限（開始日〜終了日の日数） */
+const DAY_MS = 86400000;
+const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+/* "YYYY-MM-DD" として妥当ならそのまま返し、そうでなければ "" を返す。 */
+function isoDate(v) {
+  const s = String(v == null ? "" : v).trim();
+  if (!ISO_DATE_RE.test(s)) return "";
+  const t = Date.parse(s + "T00:00:00Z");
+  if (!Number.isFinite(t)) return "";
+  return new Date(t).toISOString().slice(0, 10) === s ? s : "";   // 2026-02-31 などを弾く
+}
+
+/* 会期の開始日・終了日を整える。開始日が無ければ会期なし（どちらも ""）。 */
+function normalizePeriod(startRaw, endRaw) {
+  const eventStart = isoDate(startRaw);
+  if (!eventStart) return { eventStart: "", eventEnd: "" };
+  let eventEnd = isoDate(endRaw) || eventStart;
+  if (eventEnd < eventStart) eventEnd = eventStart;
+  return { eventStart, eventEnd };
+}
+
+/* 開始日から終了日までの日数（両端を含む）。 */
+function daySpan(start, end) {
+  return Math.round((Date.parse(end + "T00:00:00Z") - Date.parse(start + "T00:00:00Z")) / DAY_MS) + 1;
+}
+
+/* 会期を1日ずつの配列に展開する。未設定なら空配列。
+   発表日のドロップダウンも、タイムテーブルの日別表示も、この配列が正。 */
+function eventDates(settings) {
+  const { eventStart, eventEnd } = normalizePeriod(
+    settings && settings.eventStart, settings && settings.eventEnd);
+  if (!eventStart) return [];
+  const out = [];
+  const last = Date.parse(eventEnd + "T00:00:00Z");
+  for (let t = Date.parse(eventStart + "T00:00:00Z"); t <= last && out.length < MAX_EVENT_DAYS; t += DAY_MS)
+    out.push(new Date(t).toISOString().slice(0, 10));
+  return out;
+}
 
 /* 種別定義ファイル。無ければ下の DEFAULT_TYPES を使う。 */
 const TYPES_FILE = path.resolve(
@@ -94,6 +133,8 @@ function defaultData(seed) {
       notice: "",
       registrationOpen: false,
       registrationKey: seed.registrationKey || "",
+      eventStart: "",
+      eventEnd: "",
       types: normalizeTypes(DEFAULT_TYPES)
     },
     registrations: [],
@@ -110,26 +151,39 @@ function migrate(data, seed) {
   const s = data.settings && typeof data.settings === "object" ? data.settings : {};
   const types = Array.isArray(s.types) ? s.types.filter(t => t && typeof t === "object") : null;
 
+  const period = normalizePeriod(s.eventStart, s.eventEnd);
+  const settings = {
+    eventName: typeof s.eventName === "string" ? s.eventName : base.settings.eventName,
+    notice: typeof s.notice === "string" ? s.notice : "",
+    registrationOpen: s.registrationOpen === true,
+    registrationKey: typeof s.registrationKey === "string" ? s.registrationKey : "",
+    eventStart: period.eventStart,
+    eventEnd: period.eventEnd,
+    types: types && types.length
+      ? types.map(t => ({
+          id: typeof t.id === "string" && t.id ? t.id : randomUUID(),
+          name: String(t.name == null ? "" : t.name),
+          talk: Number.isFinite(+t.talk) ? Math.max(0, Math.round(+t.talk)) : 0,
+          qa: Number.isFinite(+t.qa) ? Math.max(0, Math.round(+t.qa)) : 0,
+          emphasis: t.emphasis === true
+        }))
+      : base.settings.types
+  };
+
+  const registrations = Array.isArray(data.registrations)
+    ? data.registrations.filter(r => r && typeof r === "object")
+    : [];
+  // 発表日は会期に含まれる日付だけを残す（会期を狭めたあとの取りこぼしをここでも掃除する）
+  const dates = new Set(eventDates(settings));
+  for (const r of registrations) {
+    const d = isoDate(r.date);
+    r.date = dates.has(d) ? d : "";
+  }
+
   return {
     version: VERSION,
-    settings: {
-      eventName: typeof s.eventName === "string" ? s.eventName : base.settings.eventName,
-      notice: typeof s.notice === "string" ? s.notice : "",
-      registrationOpen: s.registrationOpen === true,
-      registrationKey: typeof s.registrationKey === "string" ? s.registrationKey : "",
-      types: types && types.length
-        ? types.map(t => ({
-            id: typeof t.id === "string" && t.id ? t.id : randomUUID(),
-            name: String(t.name == null ? "" : t.name),
-            talk: Number.isFinite(+t.talk) ? Math.max(0, Math.round(+t.talk)) : 0,
-            qa: Number.isFinite(+t.qa) ? Math.max(0, Math.round(+t.qa)) : 0,
-            emphasis: t.emphasis === true
-          }))
-        : base.settings.types
-    },
-    registrations: Array.isArray(data.registrations)
-      ? data.registrations.filter(r => r && typeof r === "object")
-      : [],
+    settings,
+    registrations,
     timetable: data.timetable && typeof data.timetable === "object" ? data.timetable : null,
     typesFingerprint: typeof data.typesFingerprint === "string" ? data.typesFingerprint : null
   };
@@ -233,4 +287,4 @@ class Store {
   }
 }
 
-module.exports = { Store, VERSION };
+module.exports = { Store, VERSION, isoDate, eventDates, normalizePeriod, daySpan, MAX_EVENT_DAYS };

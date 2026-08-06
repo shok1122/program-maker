@@ -20,7 +20,8 @@ const fs = require("node:fs");
 const fsp = require("node:fs/promises");
 const path = require("node:path");
 const crypto = require("node:crypto");
-const { Store } = require("./store.js");
+const { Store, isoDate, eventDates, normalizePeriod, daySpan, MAX_EVENT_DAYS } =
+  require("./store.js");
 
 const ROOT = path.resolve(__dirname, "..");
 
@@ -210,6 +211,12 @@ function buildRegistration(settings, input, existing) {
   const type = settings.types.find(t => t.id === String(input.typeId || ""));
   if (!type) throw Object.assign(new Error("種別を選択してください。"), { status: 400 });
 
+  // 発表日は会期の中の日付だけを受け付ける（会期未設定なら常に未定）。
+  // date を送ってこないクライアント（参加登録ページなど）では既存の値を保つ。
+  let date = existing ? isoDate(existing.date) : "";
+  if ("date" in input) date = isoDate(input.date);
+  if (!eventDates(settings).includes(date)) date = "";
+
   const title = str(input.title, LIMITS.title);
   const speaker = str(input.speaker, LIMITS.speaker);
   const affiliation = str(input.affiliation, LIMITS.affiliation);
@@ -222,7 +229,7 @@ function buildRegistration(settings, input, existing) {
     id: existing ? existing.id : crypto.randomUUID(),
     typeId: type.id,
     typeName: type.name,
-    title, speaker, affiliation,
+    title, speaker, affiliation, date,
     createdAt: existing ? existing.createdAt : now,
     updatedAt: now
   };
@@ -305,7 +312,7 @@ async function handleApi(req, res, url) {
 
   if (sub === "settings" && m === "PUT") {
     const body = await readJson(req);
-    const settings = await store.mutate(data => {
+    const result = await store.mutate(data => {
       const s = data.settings;
       const inc = body.settings && typeof body.settings === "object" ? body.settings : body;
 
@@ -313,6 +320,15 @@ async function handleApi(req, res, url) {
       if ("notice" in inc) s.notice = text(inc.notice, LIMITS.notice);
       if ("registrationOpen" in inc) s.registrationOpen = !!inc.registrationOpen;
       if ("registrationKey" in inc) s.registrationKey = str(inc.registrationKey, LIMITS.key);
+
+      if ("eventStart" in inc || "eventEnd" in inc) {
+        const p = normalizePeriod("eventStart" in inc ? inc.eventStart : s.eventStart,
+                                  "eventEnd" in inc ? inc.eventEnd : s.eventEnd);
+        if (p.eventStart && daySpan(p.eventStart, p.eventEnd) > MAX_EVENT_DAYS)
+          throw Object.assign(new Error(`会期は最大${MAX_EVENT_DAYS}日までです。`), { status: 400 });
+        s.eventStart = p.eventStart;
+        s.eventEnd = p.eventEnd;
+      }
 
       if (Array.isArray(inc.types)) {
         const seen = new Set();
@@ -336,9 +352,18 @@ async function handleApi(req, res, url) {
           if (t) r.typeName = t.name;
         }
       }
-      return s;
+
+      // 会期の外に出てしまった発表日は未定に戻す（発表日は必ず会期の中の日付か未定）
+      const days = new Set(eventDates(s));
+      let cleared = 0;
+      for (const r of data.registrations) {
+        const d = isoDate(r.date);
+        if (d && !days.has(d)) cleared++;
+        r.date = days.has(d) ? d : "";
+      }
+      return { settings: s, cleared };
     });
-    return sendJson(res, 200, { ok: true, settings });
+    return sendJson(res, 200, { ok: true, settings: result.settings, cleared: result.cleared });
   }
 
   if (sub === "registrations" && seg.length === 2 && m === "POST") {
