@@ -116,18 +116,25 @@ window.TM = (function () {
 
   function demoSeed() {
     const types = [
-      { id: uid(), name: "一般講演", talk: 12, qa: 3 },
-      { id: uid(), name: "学生講演", talk: 10, qa: 5 },
-      { id: uid(), name: "招待講演", talk: 30, qa: 10, emphasis: true },
-      { id: uid(), name: "ポスター発表", talk: 3, qa: 0 }
+      { id: uid(), name: "発表A", talk: 12, qa: 3 },
+      { id: uid(), name: "発表B", talk: 7, qa: 3 },
+      { id: uid(), name: "ポスター発表", talk: 0, qa: 0 }
     ];
     const samples = [
-      [0, "深層学習による異常検知の高速化", "山田 太郎", "神戸大学 工学研究科"],
-      [1, "分散合意アルゴリズムの実装と評価", "佐藤 花子", "神戸大学 システム情報学研究科"],
-      [0, "無線センサネットワークの省電力設計", "鈴木 次郎", "株式会社サンプル研究所"],
-      [1, "自然言語処理を用いた議事録要約", "高橋 三郎", "神戸大学 工学研究科"],
-      [2, "これからの計算機システムを考える", "田中 教授", "サンプル大学"],
-      [3, "軽量コンテナ基盤の運用事例", "伊藤 四郎", "サンプル情報システム部"]
+      [0, "Title 1", "Name 1", "XXX大学"],
+      [1, "Title 2", "Name 2", "XXX大学"],
+      [0, "Title 3", "Name 3", "YYY大学"],
+      [1, "Title 4", "Name 4", "YYY大学"],
+      [0, "Title 5", "Name 5", "XXX大学"],
+      [1, "Title 6", "Name 6", "XXX大学"],
+      [0, "Title 7", "Name 7", "YYY大学"],
+      [1, "Title 8", "Name 8", "YYY大学"],
+      [0, "Title 9", "Name 9", "XXX大学"],
+      [1, "Title 10", "Name 10", "XXX大学"],
+      [2, "Title 11", "Name 11", "XXX大学"],
+      [2, "Title 12", "Name 12", "XXX大学"]
+      [2, "Title 13", "Name 13", "YYY大学"],
+      [2, "Title 14", "Name 14", "YYY大学"]
     ];
     const t0 = Date.UTC(2026, 3, 10, 1, 0, 0);
     return {
@@ -137,7 +144,7 @@ window.TM = (function () {
         notice: "発表申込は下記フォームからお願いします。1件ずつ登録してください。\n"
               + "内容の修正・取り消しは事務局までご連絡ください。",
         registrationOpen: true,
-        registrationKey: "demo2026",
+        registrationKey: "demo",
         types
       },
       registrations: samples.map((s, i) => ({
