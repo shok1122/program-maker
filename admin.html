@@ -95,6 +95,29 @@
               <input type="time" id="tt-start" value="09:00">
             </div>
             <div class="hint">開始時刻から順に発表コマを並べ、固定枠の前で区切ります。終了時刻は発表の件数と固定枠から決まります。</div>
+
+            <hr class="panel-sep">
+
+            <label class="inline-check" style="margin-bottom:12px">
+              <input type="checkbox" id="tt-lunch-on" checked> ランチ枠を設ける
+            </label>
+            <div class="row2">
+              <div class="field">
+                <label for="tt-lunch-start">ランチ開始</label>
+                <input type="time" id="tt-lunch-start" value="12:00">
+              </div>
+              <div class="field">
+                <label for="tt-lunch-end">ランチ終了</label>
+                <input type="time" id="tt-lunch-end" value="13:00">
+              </div>
+            </div>
+
+            <hr class="panel-sep">
+
+            <label class="inline-check">
+              <input type="checkbox" id="tt-showgap" checked> 空き時間を表示
+            </label>
+            <div class="hint">発表とランチ・特別枠のあいだにできた空き時間を、表に行として出します。</div>
           </div>
 
           <div class="panel">
@@ -105,34 +128,10 @@
           </div>
 
           <div class="panel">
-            <h2>ランチ</h2>
-            <label class="inline-check" style="margin-bottom:12px">
-              <input type="checkbox" id="tt-lunch-on" checked> ランチ枠を設ける
-            </label>
-            <div class="row2">
-              <div class="field">
-                <label for="tt-lunch-start">開始</label>
-                <input type="time" id="tt-lunch-start" value="12:00">
-              </div>
-              <div class="field">
-                <label for="tt-lunch-end">終了</label>
-                <input type="time" id="tt-lunch-end" value="13:00">
-              </div>
-            </div>
-          </div>
-
-          <div class="panel">
             <h2>特別枠 / 休憩</h2>
             <div class="slots" id="tt-slots"></div>
             <button class="btn ghost block small" id="tt-add-slot" style="margin-top:11px">＋ 枠を追加</button>
             <div class="hint">休憩・基調講演・ポスター・授賞式など、発表以外の時間帯を自由に定義できます。</div>
-          </div>
-
-          <div class="panel">
-            <h2>表示</h2>
-            <label class="inline-check">
-              <input type="checkbox" id="tt-showgap" checked> 空き時間を表示
-            </label>
           </div>
         </div>
 
