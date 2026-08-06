@@ -125,6 +125,20 @@ tr.row-gap td{color:var(--ink-faint)}
 .sub-in:focus{outline:none;border-color:var(--accent);background:var(--paper);box-shadow:0 0 0 3px var(--accent-soft)}
 .fixed-label{font-size:14px;font-weight:600;color:var(--ink);padding:6px 8px}
 
+/* ---- 発表時間が0分の種別の一覧（タイムテーブルの下） ---- */
+.board.untimed{margin-top:18px}
+.board.untimed .board-head .ttl{
+  display:inline-flex;align-items:center;gap:8px;
+  font-size:14px;letter-spacing:.02em;text-transform:none;color:var(--ink);
+}
+.board.untimed .board-head .ttl .sw{width:9px;height:9px;border-radius:2px;display:inline-block}
+.board.untimed .summary{font-family:var(--mono);color:var(--ink-soft);display:flex;gap:14px}
+.board.untimed .summary b{color:var(--ink);font-weight:600}
+.board.untimed tbody td{padding:9px 12px;vertical-align:top}
+.board.untimed .u-title{font-weight:600;color:var(--ink)}
+.board.untimed .u-none{font-weight:400;font-style:italic;color:var(--ink-faint)}
+.board.untimed .u-org{color:var(--ink-soft)}
+
 .empty-board{padding:48px 20px;text-align:center;color:var(--ink-faint)}
 .empty-board b{display:block;color:var(--ink-soft);margin-bottom:4px;font-size:15px}
 
@@ -142,4 +156,6 @@ tr.row-gap td{color:var(--ink-faint)}
   .board table tbody td,.board table thead th{border-color:#000}
   tr.row-gap{display:none}
   .c-move,.c-del{display:none}
+  .board.untimed{break-inside:avoid;margin-top:16px}
+  .board.untimed .board-head{padding:10px 0 6px;border-color:#000}
 }

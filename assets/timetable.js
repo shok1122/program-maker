@@ -13,7 +13,7 @@ window.Timetable = (function () {
   let talkTypes = [];
   let customSlots = [{ id: uid(), start: "15:00", end: "15:15", label: "休憩", type: "break" }];
   // 発表の並び順そのもの。手動で入れ替え可能で、再生成をまたいで保持される
-  // {id, typeId, title, speaker}
+  // {id, typeId, title, speaker, affiliation}
   let talkList = [];
   let items = [];         // rendered rows
   let refocus = null;     // 再描画後にフォーカスを戻す並べ替えボタン
@@ -57,7 +57,21 @@ window.Timetable = (function () {
   ];
   const typeColor = i => TYPE_COLORS[i % TYPE_COLORS.length];
   const typeLen = t => (t.talk || 0) + (t.qa || 0);
-  const newEntry = typeId => ({ id: uid(), typeId, title: "", speaker: "" });
+  const newEntry = typeId => ({ id: uid(), typeId, title: "", speaker: "", affiliation: "" });
+
+  /* 発表者と所属は分けて持ち、表の1行に収めるときだけ「発表者（所属）」にまとめる。 */
+  function joinSpeaker(who, org) {
+    who = String(who == null ? "" : who).trim();
+    org = String(org == null ? "" : org).trim();
+    if (who && org) return `${who}（${org}）`;
+    return who || org;
+  }
+  /* まとまった1つの文字列（旧い下書き・CSVなど）を発表者と所属に戻す。 */
+  function splitSpeaker(s) {
+    s = String(s == null ? "" : s).trim();
+    const m = /^(.+?)\s*[（(]\s*([^（()）]+?)\s*[）)]$/.exec(s);
+    return m ? { speaker: m[1], affiliation: m[2] } : { speaker: s, affiliation: "" };
+  }
 
   function readSettings() {
     return {
@@ -76,7 +90,9 @@ window.Timetable = (function () {
       start: s.start, lunchOn: s.lunchOn, lunchStart: s.lunchStart, lunchEnd: s.lunchEnd,
       showGap: s.showGap,
       talkTypes: talkTypes.map(t => ({ id: t.id, name: t.name, talk: t.talk, qa: t.qa })),
-      talkList: talkList.map(e => ({ id: e.id, typeId: e.typeId, title: e.title, speaker: e.speaker })),
+      talkList: talkList.map(e => ({
+        id: e.id, typeId: e.typeId, title: e.title, speaker: e.speaker, affiliation: e.affiliation
+      })),
       customSlots: customSlots.map(c => ({ id: c.id, start: c.start, end: c.end, label: c.label, type: c.type })),
       // CSVの時刻をそのまま使っている場合だけ、その時刻を保存して復元する
       absolute: absolute,
@@ -125,12 +141,19 @@ window.Timetable = (function () {
       if (Array.isArray(draft.talkList)) {
         talkList = draft.talkList
           .filter(e => e && known.has(e.typeId))
-          .map(e => ({
-            id: typeof e.id === "string" && e.id ? e.id : uid(),
-            typeId: e.typeId,
-            title: String(e.title == null ? "" : e.title),
-            speaker: String(e.speaker == null ? "" : e.speaker)
-          }));
+          .map(e => {
+            // 所属を分けて持つ前の下書きは「発表者（所属）」の形なので分解して取り込む
+            const who = e.affiliation == null
+              ? splitSpeaker(e.speaker)
+              : { speaker: String(e.speaker == null ? "" : e.speaker), affiliation: String(e.affiliation) };
+            return {
+              id: typeof e.id === "string" && e.id ? e.id : uid(),
+              typeId: e.typeId,
+              title: String(e.title == null ? "" : e.title),
+              speaker: who.speaker,
+              affiliation: who.affiliation
+            };
+          });
       }
       applyMasterTypes(true);   // 下書きより設定タブの種別マスタを優先する
       if (Array.isArray(draft.customSlots)) {
@@ -188,13 +211,6 @@ window.Timetable = (function () {
   }
 
   /* ---------------- 参加登録からの読み込み ---------------- */
-  function speakerLine(r) {
-    const who = String(r.speaker || "").trim();
-    const org = String(r.affiliation || "").trim();
-    if (who && org) return `${who}（${org}）`;
-    return who || org;
-  }
-
   /* 登録一覧を発表順として取り込む。種別マスタの発表／質疑時間をそのまま使う。 */
   function loadFromRegistrations(quiet) {
     const src = (ctx && ctx.source) || { registrations: [], types: [] };
@@ -221,7 +237,11 @@ window.Timetable = (function () {
         }
         byId.set(r.typeId, def);
       }
-      talkList.push({ id: uid(), typeId: def.id, title: r.title || "", speaker: speakerLine(r) });
+      talkList.push({
+        id: uid(), typeId: def.id, title: r.title || "",
+        speaker: String(r.speaker || "").trim(),
+        affiliation: String(r.affiliation || "").trim()
+      });
     }
 
     // マスタの種別はすべて残す（発表が0件でも「＋ 発表を追加」から選べるように）
@@ -270,14 +290,14 @@ window.Timetable = (function () {
     // 種別が無くなった発表は落とす
     talkList = talkList.filter(e => specById.has(e.typeId));
 
-    // 発表＋質疑が0分の種別は時間を取れないので表に出せない
+    // 発表＋質疑が0分の種別は時間を取れないので、表の下に一覧として出す
     const zero = new Map();
     for (const e of talkList) {
       const spec = specById.get(e.typeId);
       if (spec.len <= 0) zero.set(spec.name, (zero.get(spec.name) || 0) + 1);
     }
     for (const [name, n] of zero)
-      warnings.push(`発表種別「${name}」は発表＋質疑が0分のため、${n}件を配置しませんでした（時間は「設定」タブで指定できます）。`);
+      warnings.push(`発表種別「${name}」は発表＋質疑が0分のため、${n}件をタイムテーブルには並べず、下の一覧に表示しました（時間を割り当てる場合は「設定」タブで指定できます）。`);
 
     if (!talkList.length)
       warnings.push("発表が0件です。「登録一覧から読み込む」か、表の下の「＋ 発表を追加」で追加してください。");
@@ -323,7 +343,7 @@ window.Timetable = (function () {
         out.push({
           type: "talk", start: cursor, end: cursor + spec.len,
           entryId: e.id, typeName: spec.name, colorIdx: spec.colorIdx,
-          title: e.title, speaker: e.speaker
+          title: e.title, speaker: joinSpeaker(e.speaker, e.affiliation)
         });
         cursor += spec.len; li++;
       }
@@ -357,6 +377,7 @@ window.Timetable = (function () {
 
     renderTypes();
     renderAddBar();
+    renderUntimed();
 
     const talkItems = items.filter(i => i.type === "talk");
     const total = items.length ? items[items.length - 1].end - items[0].start : 0;
@@ -475,6 +496,41 @@ window.Timetable = (function () {
     if (note) note.textContent = usable.length
       ? "空の発表を1件、いちばん下に追加します。"
       : "発表時間が設定された種別がありません（「設定」タブで指定してください）。";
+  }
+
+  /* 発表＋質疑が0分の種別（ポスター発表など）は時刻を持てずタイムテーブルに並べられないので、
+     表の下に種別ごとの一覧として出す。 */
+  function renderUntimed() {
+    const box = $("#tt-untimed");
+    if (!box) return;
+    const groups = talkTypes
+      .map((t, i) => ({ t, i, list: talkList.filter(e => e.typeId === t.id) }))
+      .filter(g => typeLen(g.t) <= 0 && g.list.length);
+
+    if (!groups.length) { box.innerHTML = ""; return; }
+
+    box.innerHTML = groups.map(g => {
+      const rows = g.list.map((e, n) => `<tr>
+        <td class="num">${n + 1}</td>
+        <td class="u-title">${e.title ? esc(e.title) : `<span class="u-none">（無題）</span>`}</td>
+        <td>${esc(e.speaker)}</td>
+        <td class="u-org">${esc(e.affiliation)}</td>
+      </tr>`).join("");
+      return `<div class="board untimed">
+        <div class="board-head">
+          <span class="ttl"><i class="sw" style="background:${typeColor(g.i).chip}"></i>${
+            esc(g.t.name || `種別${g.i + 1}`)}</span>
+          <div class="summary" style="font-size:11px"><span>発表 <b>${g.list.length}</b> 件</span></div>
+        </div>
+        <table>
+          <thead><tr>
+            <th class="num">#</th><th>タイトル</th>
+            <th style="width:170px">発表者</th><th style="width:210px">所属</th>
+          </tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>`;
+    }).join("");
   }
 
   function renderLegend() {
@@ -797,7 +853,11 @@ window.Timetable = (function () {
     // 状態を差し替える（CSVに出てこない種別は残さない。件数だけ0にすると次の読み込みで溜まっていく）
     talkTypes = (talks.length ? defs.filter(t => t.count > 0) : defs)
       .map(t => ({ id: t.id, name: t.name, talk: t.talk, qa: t.qa }));
-    talkList = talks.map(t => ({ id: uid(), typeId: t.group.def.id, title: t.title, speaker: t.speaker }));
+    talkList = talks.map(t => {
+      const who = splitSpeaker(t.speaker);   // 「発表者（所属）」の形なら所属を取り出す
+      return { id: uid(), typeId: t.group.def.id, title: t.title,
+               speaker: who.speaker, affiliation: who.affiliation };
+    });
     applyMasterTypes(false);   // CSVに無かった種別も「＋ 発表を追加」から選べるように残す
     customSlots = fixed.map(f => ({ id: uid(), start: toStr(f.start), end: toStr(f.end), label: f.label, type: f.type }));
     $("#tt-lunch-on").checked = !!lunch;
@@ -896,7 +956,11 @@ window.Timetable = (function () {
       const it = items[idx]; if (!it || it.type !== "talk") return;
       it[field] = t.value;
       const en = talkList.find(x => x.id === it.entryId);
-      if (en) en[field] = t.value;
+      if (en) {
+        en[field] = t.value;
+        // 表では発表者と所属を1行にまとめて出しているので、書き換えられたら所属は畳み込む
+        if (field === "speaker") en.affiliation = "";
+      }
       scheduleSave();
     });
 
