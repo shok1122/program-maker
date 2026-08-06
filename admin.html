@@ -176,6 +176,11 @@
 
     <!-- ============ 設定 ============ -->
     <section class="tabpanel" role="tabpanel" id="panel-set" aria-labelledby="tab-set" hidden>
+      <div class="toolbar">
+        <button class="btn" id="st-save">設定を保存</button>
+        <span class="saved-tag" id="st-status">変更後に押してください。</span>
+      </div>
+
       <div class="tt-layout">
 
         <div>
@@ -219,12 +224,6 @@
               発表時間・質疑応答時間はタイムテーブル作成時のコマ長として使われます（ポスター発表など時間を割り当てない種別は0でも構いません）。
               <br>すでに登録がある種別を削除すると、その登録は種別なしになります。
             </div>
-          </div>
-
-          <div class="panel">
-            <h2>保存</h2>
-            <button class="btn block" id="st-save">設定を保存</button>
-            <div class="hint" id="st-status">変更後に押してください。</div>
           </div>
         </div>
 

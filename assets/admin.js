@@ -311,7 +311,13 @@
     $("#st-url").value = new URL("index.html", location.href).href;
     draftTypes = s.types.map(t => ({ id: t.id, name: t.name, talk: t.talk, qa: t.qa }));
     renderSettingTypes();
-    $("#st-status").textContent = "変更後に押してください。";
+    setSettingStatus("変更後に押してください。");
+  }
+
+  function setSettingStatus(text, ok) {
+    const el = $("#st-status");
+    el.textContent = text;
+    el.className = "saved-tag" + (ok ? " on" : "");
   }
 
   $("#st-types").addEventListener("input", e => {
@@ -342,7 +348,7 @@
     if (!draftTypes.length) { notice("種別は1つ以上必要です。", "err"); return; }
     const btn = $("#st-save");
     btn.disabled = true;
-    $("#st-status").textContent = "保存中…";
+    setSettingStatus("保存中…");
     try {
       const res = await TM.saveSettings({
         eventName: $("#st-event").value,
@@ -358,11 +364,11 @@
       fillSettings();
       renderRegistrations();
       syncTimetableSource();
-      $("#st-status").textContent = "保存しました。";
+      setSettingStatus("保存しました。", true);
       notice("設定を保存しました。", "ok");
     } catch (err) {
       if (handleAuthError(err)) return;
-      $("#st-status").textContent = "保存できませんでした。";
+      setSettingStatus("保存できませんでした。");
       notice(err.message || "設定を保存できませんでした。", "err");
     } finally {
       btn.disabled = false;
