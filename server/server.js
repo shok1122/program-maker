@@ -7,7 +7,9 @@
      PORT              待ち受けポート                    既定 8080
      HOST              待ち受けアドレス                  既定 0.0.0.0
      DATA_DIR          JSON の保存先ディレクトリ         既定 ./data
-     ADMIN_PASSWORD    管理者パスワード（未設定なら起動時に自動生成してログに出す）
+     ADMIN_PASSWORD_HASH  管理者パスワードのハッシュ値（server/hash-password.js で作る）
+     ADMIN_PASSWORD    管理者パスワードの平文（旧方式。ハッシュ値が無いときだけ使う）
+                       どちらも未設定なら起動時に自動生成してログに出す
      REGISTRATION_KEY  参加登録キーの初期値（初回起動時のみ。以後は管理画面で変更）
      EVENT_NAME        イベント名の初期値（初回起動時のみ）
      TYPES_FILE        発表種別の定義ファイル             既定 ./config/types.json
@@ -22,6 +24,7 @@ const path = require("node:path");
 const crypto = require("node:crypto");
 const { Store, isoDate, eventDates, normalizePeriod, daySpan, MAX_EVENT_DAYS } =
   require("./store.js");
+const password = require("./password.js");
 
 const ROOT = path.resolve(__dirname, "..");
 
@@ -37,16 +40,35 @@ const MAX_BODY = 1024 * 1024;          // 1MB（タイムテーブル下書き�
 const LOGIN_MAX_ATTEMPTS = 10;
 const LOGIN_WINDOW_MS = 15 * 60e3;
 
-const LIMITS = { title: 300, speaker: 200, affiliation: 200, key: 200, password: 200,
+const LIMITS = { title: 300, speaker: 200, affiliation: 200, key: 200,
                  eventName: 120, notice: 2000, typeName: 60 };
 
-let adminPasswordGenerated = false;
-let ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "";
-if (!ADMIN_PASSWORD) {
-  ADMIN_PASSWORD = crypto.randomBytes(9).toString("base64url");
-  adminPasswordGenerated = true;
+/* 管理者パスワードは平文では持たず、ハッシュ値だけを持つ（.htpasswd と同じ考え方）。
+   ADMIN_PASSWORD_HASH … 設定に置くのはこれ。server/hash-password.js で作る。
+   ADMIN_PASSWORD      … 旧方式。起動時にハッシュ化して使い、警告を出す。
+   どちらも無ければ、その場限りのパスワードを自動生成してログに出す。 */
+let ADMIN_HASH = "";
+let adminPasswordGenerated = "";      /* 自動生成したときだけ平文を持つ（ログに出すため） */
+let adminPasswordFromPlaintext = false;
+
+async function initAdminPassword() {
+  const configured = String(process.env.ADMIN_PASSWORD_HASH || "").trim();
+  if (configured) {
+    if (!password.isHash(configured))
+      throw Object.assign(
+        new Error("ADMIN_PASSWORD_HASH の形式が正しくありません。"
+          + "`node server/hash-password.js` で作り直してください。"), { friendly: true });
+    ADMIN_HASH = configured;
+    return;
+  }
+  const plain = process.env.ADMIN_PASSWORD || "";
+  if (plain) {
+    adminPasswordFromPlaintext = true;
+  } else {
+    adminPasswordGenerated = crypto.randomBytes(9).toString("base64url");
+  }
+  ADMIN_HASH = await password.hash(plain || adminPasswordGenerated);
 }
-const ADMIN_HASH = crypto.createHash("sha256").update(ADMIN_PASSWORD).digest();
 
 const store = new Store(DATA_DIR, {
   registrationKey: process.env.REGISTRATION_KEY || "",
@@ -278,8 +300,7 @@ async function handleApi(req, res, url) {
     if (throttled(ip))
       return sendJson(res, 429, { error: "ログインの試行が多すぎます。しばらく待ってからお試しください。" });
     const body = await readJson(req);
-    const given = crypto.createHash("sha256").update(str(body.password, LIMITS.password)).digest();
-    if (!crypto.timingSafeEqual(given, ADMIN_HASH)) {
+    if (!await password.verify(body.password, ADMIN_HASH)) {
       noteFailure(ip);
       return sendJson(res, 401, { error: "パスワードが正しくありません。" });
     }
@@ -509,7 +530,7 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
-store.init().then(info => {
+Promise.all([store.init(), initAdminPassword()]).then(([info]) => {
   server.listen(PORT, HOST, () => {
     console.log(`[program-maker] listening on http://${HOST}:${PORT}`);
     console.log(`[program-maker] data file: ${store.file}${info.created ? " (新規作成)" : ""}`);
@@ -522,15 +543,20 @@ store.init().then(info => {
       console.warn(`[program-maker] 既存のデータファイルを読み込めなかったため ${info.recoveredFrom} に退避しました`);
     console.log(`[program-maker] 参加登録: /    管理画面: /admin`);
     if (adminPasswordGenerated) {
-      console.warn("[program-maker] ADMIN_PASSWORD が未設定です。今回のパスワードを自動生成しました:");
-      console.warn(`[program-maker]   ${ADMIN_PASSWORD}`);
-      console.warn("[program-maker] 再起動すると変わります。本番では ADMIN_PASSWORD を設定してください。");
+      console.warn("[program-maker] ADMIN_PASSWORD_HASH が未設定です。今回のパスワードを自動生成しました:");
+      console.warn(`[program-maker]   ${adminPasswordGenerated}`);
+      console.warn("[program-maker] 再起動すると変わります。本番では ADMIN_PASSWORD_HASH を設定してください");
+      console.warn("[program-maker] （ハッシュ値は node server/hash-password.js で作れます）。");
+    } else if (adminPasswordFromPlaintext) {
+      console.warn("[program-maker] ADMIN_PASSWORD（平文）でログインします。ハッシュ値での設定に移行してください:");
+      console.warn("[program-maker]   node server/hash-password.js の出力を .env の ADMIN_PASSWORD_HASH に置き、"
+        + "ADMIN_PASSWORD は削除してください。");
     }
     if (!store.data.settings.registrationKey)
       console.log("[program-maker] 参加登録キーは未設定です（誰でも登録できます）。管理画面の「設定」で指定できます。");
   });
 }).catch(err => {
-  console.error("[program-maker] 起動に失敗しました:", err);
+  console.error("[program-maker] 起動に失敗しました:", err && err.friendly ? err.message : err);
   process.exit(1);
 });
 

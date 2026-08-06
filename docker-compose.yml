@@ -8,7 +8,8 @@ services:
       - "${HOST_PORT:-8080}:8080"
     environment:
       # 管理画面（登録一覧 / タイムテーブル / 設定）のパスワード（必須）
-      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?ADMIN_PASSWORD を .env に設定してください}
+      # 平文ではなくハッシュ値。`make password` で作って .env に貼り付けてください。
+      ADMIN_PASSWORD_HASH: ${ADMIN_PASSWORD_HASH:?ADMIN_PASSWORD_HASH を .env に設定してください（make password で作れます）}
       # 以下はいずれも任意
       REGISTRATION_KEY: ${REGISTRATION_KEY:-}   # 参加登録キーの初期値（初回起動時のみ）
       EVENT_NAME: ${EVENT_NAME:-}               # イベント名の初期値（初回起動時のみ）

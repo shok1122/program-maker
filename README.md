@@ -12,13 +12,16 @@ https://shok1122.github.io/program-maker/
 
 ```bash
 cp .env.example .env
-vi .env                 # ADMIN_PASSWORD を書き換える（必須）
+make password           # 管理者パスワードを決める → 出た1行を .env に貼り付ける（必須）
 vi config/types.json    # 発表種別（名称・発表時間・質疑応答時間）を用意する
 make build && make up   # docker compose build → up -d
 ```
 
 - 参加登録ページ … http://localhost:8080/ ← 発表者に配るURL
-- 管理画面 … http://localhost:8080/admin ← `ADMIN_PASSWORD` でログイン
+- 管理画面 … http://localhost:8080/admin ← `make password` で決めたパスワードでログイン
+
+パスワードそのものは保存しません。`.env` に置くのは `make password` が作ったハッシュ値だけです
+（[管理者パスワード](#管理者パスワード)）。
 
 使い方の流れは次の3ステップです。
 
@@ -111,13 +114,42 @@ CSVエクスポート（`発表種別,発表日,タイトル,発表者,所属,�
 
 ```bash
 cp .env.example .env
-# .env の ADMIN_PASSWORD を必ず変更してください
+make password   # 出力された ADMIN_PASSWORD_HASH=... の行を .env に貼り付けてください（後述）
 # config/types.json に発表種別を書いてください（後述）
 docker compose up -d --build
 ```
 
 `http://localhost:8080/` が参加登録ページ、`http://localhost:8080/admin` が管理画面です。
 データは名前付きボリューム `program-data` の `/data/registrations.json` に保存されます。
+
+### 管理者パスワード
+
+`.htpasswd` と同じ考え方で、**パスワードそのものはどこにも保存しません**。
+`.env` に置くのはハッシュ値だけです。
+
+```console
+$ make password
+管理者パスワード:
+もう一度入力:
+ADMIN_PASSWORD_HASH=scrypt:ln=14,r=8,p=1:iNCcJ1w9SM9DJ3ru0dQzGA:9tvSbxaMd0kwuzUmXAlNsjJd7oORUvyR-eqK4t3Xz5w
+```
+
+最後の1行を `.env` の `ADMIN_PASSWORD_HASH=` に貼り付けて、起動（起動中なら `docker compose restart`）してください。
+
+- 入力したパスワードは画面に表示されず、ファイルにも残りません。
+- ハッシュは scrypt（ソルト付き・`N=2^14, r=8, p=1`）で、照合は定数時間で行います。
+  ソルトは毎回変わるので、同じパスワードでも出力は毎回違います。
+- ハッシュ値から元のパスワードは分かりません。忘れたときは作り直してください。
+- Node.js が入っていない環境では、`make password` がコンテナ（`node:22-alpine`）の中で実行します
+  （イメージのビルドは不要）。直接動かす場合は `node server/hash-password.js` です。
+- 自動化するときは引数やパイプでも渡せます。シェルの履歴に残る点にはご注意ください。
+
+  ```bash
+  node server/hash-password.js 'パスワード'
+  ```
+
+`ADMIN_PASSWORD`（平文）も当面は受け付けますが、起動時に警告が出ます。
+`ADMIN_PASSWORD_HASH` を設定して `ADMIN_PASSWORD` は削除してください。
 
 ### 発表種別のカスタマイズ（`config/types.json`）
 
@@ -173,7 +205,8 @@ docker compose restart
 
 | 変数 | 既定値 | 内容 |
 | --- | --- | --- |
-| `ADMIN_PASSWORD` | （未設定なら起動時に自動生成してログに出力） | 管理画面のパスワード。**本番では必ず設定してください** |
+| `ADMIN_PASSWORD_HASH` | （未設定なら起動時に自動生成してログに出力） | 管理画面のパスワードのハッシュ値。`make password` で作ります。**本番では必ず設定してください** |
+| `ADMIN_PASSWORD` | 空 | 平文のパスワード（旧方式）。`ADMIN_PASSWORD_HASH` が無いときだけ使われ、起動時に警告が出ます |
 | `REGISTRATION_KEY` | 空 | 参加登録キーの初期値。**初回起動時のみ**反映され、以後は管理画面の「設定」で変更します |
 | `EVENT_NAME` | `研究発表会` | イベント名の初期値（初回起動時のみ） |
 | `TYPES_FILE` | `./config/types.json` | 発表種別の定義ファイル。内容を変えて再起動すると反映されます |
@@ -196,7 +229,8 @@ docker compose exec program-maker cat /data/registrations.json > backup.json
 ### Docker を使わない場合
 
 ```bash
-ADMIN_PASSWORD=... node server/server.js
+node server/hash-password.js            # ADMIN_PASSWORD_HASH=... が出る
+ADMIN_PASSWORD_HASH=scrypt:... node server/server.js
 ```
 
 Node.js 22 以降で、追加パッケージのインストールは不要です。
@@ -207,6 +241,8 @@ Node.js 22 以降で、追加パッケージのインストールは不要です
 - 管理系のAPIはすべてセッション必須で、更新系は独自ヘッダと `Origin` の一致も要求します（CSRF対策）。
   Cookie は `HttpOnly` / `SameSite=Strict` です。
 - ログインの失敗は接続元ごとに15分あたり10回までに制限されます。
+- パスワードは平文では保持せず、`.htpasswd` と同じくハッシュ値（ソルト付き scrypt）だけを設定に置きます
+  （[管理者パスワード](#管理者パスワード)）。
 - 単一の共有パスワードによる簡易的な保護です。インターネットに公開する場合はHTTPS（`COOKIE_SECURE=1`）を前提にしてください。
 
 ## デモ（GitHub Pages）
