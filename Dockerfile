@@ -11,6 +11,7 @@ WORKDIR /app
 
 COPY server ./server
 COPY assets ./assets
+COPY config ./config
 COPY index.html admin.html login.html ./
 
 # データは名前付きボリュームに置く。非root（node）で書けるように所有者を移す。

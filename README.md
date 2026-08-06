@@ -1,6 +1,6 @@
-# Timetable Maker
+# Program Maker
 
-発表会向けの **参加登録 + タイムテーブル作成ツール**
+発表会向けの **参加登録 + プログラム編成ツール**
 
 発表申込の受付から、申込一覧の確認、タイムテーブルの組み立てまでを1つのアプリで完結させます。
 バックエンドは Node.js の標準ライブラリだけで動き（npm 依存なし）、データは JSON ファイル1つに保存します。
@@ -61,17 +61,68 @@ CSVエクスポート（`発表種別,タイトル,発表者,所属,登録日時
 種別の発表時間・質疑応答時間は、そのままタイムテーブルのコマ長として使われます
 （ポスター発表など時間を割り当てない種別は0分でも構いません）。
 種別名を変更すると、既存の登録の表示名にも反映されます。
+種別は起動前に `config/types.json` でまとめて用意することもできます（[発表種別のカスタマイズ](#発表種別のカスタマイズconfigtypesjson)）。
 
 ## 本番環境（Docker）
 
 ```bash
 cp .env.example .env
 # .env の ADMIN_PASSWORD を必ず変更してください
+# config/types.json に発表種別を書いてください（後述）
 docker compose up -d --build
 ```
 
 `http://localhost:8080/` が参加登録ページ、`http://localhost:8080/admin` が管理画面です。
-データは名前付きボリューム `timetable-data` の `/data/registrations.json` に保存されます。
+データは名前付きボリューム `program-data` の `/data/registrations.json` に保存されます。
+
+### 発表種別のカスタマイズ（`config/types.json`）
+
+参加登録ページのドロップダウンに並ぶ**発表種別**は、コンテナを起動する前に
+`config/types.json` を書き換えて用意できます。
+
+```json
+{
+  "types": [
+    { "name": "一般講演",     "talk": 12, "qa": 3  },
+    { "name": "学生講演",     "talk": 10, "qa": 5  },
+    { "name": "招待講演",     "talk": 30, "qa": 10 },
+    { "name": "ポスター発表", "talk": 3,  "qa": 0  }
+  ]
+}
+```
+
+| キー | 内容 |
+| --- | --- |
+| `name` | 種別の名称（60文字まで）。参加登録ページのドロップダウンに表示されます |
+| `talk` | 発表時間（分・0〜600）。タイムテーブルのコマ長に使われます |
+| `qa` | 質疑応答時間（分・0〜600）。1コマ = `talk` + `qa` |
+| `id` | **省略可**。省略すると `name` から決まる固定値が入ります |
+
+`config/` は読み取り専用でコンテナにマウントされるので、
+**編集したら再起動するだけで反映されます**（イメージの再ビルドは不要）。
+
+```bash
+vi config/types.json
+docker compose restart
+```
+
+反映の規則は次のとおりです。
+
+- ファイルの内容が**前回反映したときから変わっていれば**、起動時に種別を上書きします。
+- 変わっていなければ何もしません。したがって、**管理画面の「設定」で種別を編集しても、
+  ファイルを触らないかぎり再起動で元に戻ることはありません**。
+- ファイルが無い・JSONが壊れている・種別が0件の場合は警告を出し、種別は変更しません
+  （初回起動時のみ組み込みの既定値を使います）。
+- `id` は既存の申込と種別を結びつける鍵です。省略した場合は `name` から決まるため、
+  **受付開始後に名称だけ変更すると、それまでの申込は種別なしになります**。
+  受付開始後に名称を変えたい場合は `id` を明示して固定するか、管理画面の「設定」から変更してください
+  （管理画面での変更は既存の申込にも反映されます）。
+
+反映結果は起動ログで確認できます。
+
+```
+[program-maker] 発表種別: 4件 ← /app/config/types.json（変更を反映しました）
+```
 
 ### 環境変数
 
@@ -80,6 +131,7 @@ docker compose up -d --build
 | `ADMIN_PASSWORD` | （未設定なら起動時に自動生成してログに出力） | 管理画面のパスワード。**本番では必ず設定してください** |
 | `REGISTRATION_KEY` | 空 | 参加登録キーの初期値。**初回起動時のみ**反映され、以後は管理画面の「設定」で変更します |
 | `EVENT_NAME` | `研究発表会` | イベント名の初期値（初回起動時のみ） |
+| `TYPES_FILE` | `./config/types.json` | 発表種別の定義ファイル。内容を変えて再起動すると反映されます |
 | `PORT` / `HOST` | `8080` / `0.0.0.0` | 待ち受け先 |
 | `DATA_DIR` | `/data`（Docker）、`./data`（直接実行） | JSON の保存先 |
 | `COOKIE_SECURE` | `0` | HTTPS で公開する場合は `1`（Cookie に `Secure` を付けます） |
@@ -91,7 +143,7 @@ docker compose up -d --build
 保存先は JSON ファイル1つなので、コピーするだけで済みます。
 
 ```bash
-docker compose exec timetable cat /data/registrations.json > backup.json
+docker compose exec program-maker cat /data/registrations.json > backup.json
 ```
 
 書き込みは一時ファイル経由の原子的な置き換えで行い、直前の状態を `registrations.json.bak` に残します。
@@ -138,10 +190,12 @@ assets/
   api.js            データアクセス層（server / demo を自動判定）
   register.js       参加登録ページ
   admin.js          管理画面のシェル
-  timetable.js      タイムテーブル作成ツール
+  timetable.js      タイムテーブルタブ
 server/
   server.js         HTTPサーバー・API・認証（標準ライブラリのみ）
   store.js          JSONファイルへの永続化
+config/
+  types.json        発表種別の定義（起動前に編集する）
 Dockerfile / docker-compose.yml / .env.example
 ```
 

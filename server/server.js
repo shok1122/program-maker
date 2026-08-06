@@ -10,6 +10,7 @@
      ADMIN_PASSWORD    管理者パスワード（未設定なら起動時に自動生成してログに出す）
      REGISTRATION_KEY  参加登録キーの初期値（初回起動時のみ。以後は管理画面で変更）
      EVENT_NAME        イベント名の初期値（初回起動時のみ）
+     TYPES_FILE        発表種別の定義ファイル             既定 ./config/types.json
      COOKIE_SECURE     1 なら Secure 付きの Cookie を発行（HTTPS 経由で公開する場合）
      SESSION_HOURS     ログインの有効時間（時間）        既定 12
      TRUST_PROXY       1 なら X-Forwarded-For を接続元として扱う（リバースプロキシ配下） */
@@ -484,27 +485,32 @@ const server = http.createServer(async (req, res) => {
 
 store.init().then(info => {
   server.listen(PORT, HOST, () => {
-    console.log(`[timetable-maker] listening on http://${HOST}:${PORT}`);
-    console.log(`[timetable-maker] data file: ${store.file}${info.created ? " (新規作成)" : ""}`);
+    console.log(`[program-maker] listening on http://${HOST}:${PORT}`);
+    console.log(`[program-maker] data file: ${store.file}${info.created ? " (新規作成)" : ""}`);
+    if (info.typesFile)
+      console.log(`[program-maker] 発表種別: ${store.data.settings.types.length}件`
+        + ` ← ${info.typesFile}${info.typesUpdated ? "（変更を反映しました）" : ""}`);
+    else
+      console.log("[program-maker] 発表種別の定義ファイルはありません（管理画面の「設定」で編集できます）。");
     if (info.recoveredFrom)
-      console.warn(`[timetable-maker] 既存のデータファイルを読み込めなかったため ${info.recoveredFrom} に退避しました`);
-    console.log(`[timetable-maker] 参加登録: /    管理画面: /admin`);
+      console.warn(`[program-maker] 既存のデータファイルを読み込めなかったため ${info.recoveredFrom} に退避しました`);
+    console.log(`[program-maker] 参加登録: /    管理画面: /admin`);
     if (adminPasswordGenerated) {
-      console.warn("[timetable-maker] ADMIN_PASSWORD が未設定です。今回のパスワードを自動生成しました:");
-      console.warn(`[timetable-maker]   ${ADMIN_PASSWORD}`);
-      console.warn("[timetable-maker] 再起動すると変わります。本番では ADMIN_PASSWORD を設定してください。");
+      console.warn("[program-maker] ADMIN_PASSWORD が未設定です。今回のパスワードを自動生成しました:");
+      console.warn(`[program-maker]   ${ADMIN_PASSWORD}`);
+      console.warn("[program-maker] 再起動すると変わります。本番では ADMIN_PASSWORD を設定してください。");
     }
     if (!store.data.settings.registrationKey)
-      console.log("[timetable-maker] 参加登録キーは未設定です（誰でも登録できます）。管理画面の「設定」で指定できます。");
+      console.log("[program-maker] 参加登録キーは未設定です（誰でも登録できます）。管理画面の「設定」で指定できます。");
   });
 }).catch(err => {
-  console.error("[timetable-maker] 起動に失敗しました:", err);
+  console.error("[program-maker] 起動に失敗しました:", err);
   process.exit(1);
 });
 
 for (const sig of ["SIGINT", "SIGTERM"]) {
   process.on(sig, () => {
-    console.log(`\n[timetable-maker] ${sig} を受け取りました。終了します。`);
+    console.log(`\n[program-maker] ${sig} を受け取りました。終了します。`);
     server.close(() => process.exit(0));
     setTimeout(() => process.exit(0), 5000).unref();
   });

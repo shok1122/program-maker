@@ -1,13 +1,13 @@
 services:
-  timetable:
+  program-maker:
     build: .
-    image: timetable-maker
-    container_name: timetable-maker
+    image: program-maker
+    container_name: program-maker
     restart: unless-stopped
     ports:
       - "${HOST_PORT:-8080}:8080"
     environment:
-      # 管理画面とタイムテーブル作成ツールのパスワード（必須）
+      # 管理画面（登録一覧 / タイムテーブル / 設定）のパスワード（必須）
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:?ADMIN_PASSWORD を .env に設定してください}
       # 以下はいずれも任意
       REGISTRATION_KEY: ${REGISTRATION_KEY:-}   # 参加登録キーの初期値（初回起動時のみ）
@@ -16,7 +16,9 @@ services:
       SESSION_HOURS: ${SESSION_HOURS:-12}
       TRUST_PROXY: ${TRUST_PROXY:-0}            # リバースプロキシ配下なら 1
     volumes:
-      - timetable-data:/data
+      - program-data:/data
+      # 発表種別の定義。書き換えて再起動すれば反映されます（再ビルド不要）
+      - ./config:/app/config:ro
 
 volumes:
-  timetable-data:
+  program-data:

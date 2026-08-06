@@ -8,9 +8,15 @@
 const fs = require("node:fs");
 const fsp = require("node:fs/promises");
 const path = require("node:path");
-const { randomUUID } = require("node:crypto");
+const crypto = require("node:crypto");
+const { randomUUID } = crypto;
 
 const VERSION = 1;
+const TYPE_NAME_MAX = 60;
+
+/* 種別定義ファイル。無ければ下の DEFAULT_TYPES を使う。 */
+const TYPES_FILE = path.resolve(
+  process.env.TYPES_FILE || path.join(__dirname, "..", "config", "types.json"));
 
 const DEFAULT_TYPES = [
   { name: "一般講演", talk: 12, qa: 3 },
@@ -18,6 +24,63 @@ const DEFAULT_TYPES = [
   { name: "招待講演", talk: 30, qa: 10 },
   { name: "ポスター発表", talk: 3, qa: 0 }
 ];
+
+/* id を書かずに済むよう、名称から決まる安定した id を作る。
+   再起動しても変わらないので、既存の登録との対応が保たれる。 */
+const idFromName = name =>
+  "t-" + crypto.createHash("sha1").update(name).digest("hex").slice(0, 16);
+
+function normalizeTypes(list) {
+  const seen = new Set();
+  const out = [];
+  list.forEach((t, i) => {
+    if (!t || typeof t !== "object") return;
+    const name = String(t.name == null ? "" : t.name)
+      .replace(/\s+/g, " ").trim().slice(0, TYPE_NAME_MAX) || `種別${i + 1}`;
+    let id = typeof t.id === "string" && /^[\w-]{1,64}$/.test(t.id) ? t.id : idFromName(name);
+    if (seen.has(id)) id = `${id}-${i + 1}`;      // 同名が並んでいた場合
+    seen.add(id);
+    out.push({
+      id, name,
+      talk: Number.isFinite(+t.talk) ? Math.min(600, Math.max(0, Math.round(+t.talk))) : 0,
+      qa: Number.isFinite(+t.qa) ? Math.min(600, Math.max(0, Math.round(+t.qa))) : 0
+    });
+  });
+  return out;
+}
+
+/* config/types.json を読む。読めない・壊れている・空の場合は null を返し、
+   呼び出し側は組み込みの既定値（または保存済みの内容）をそのまま使う。 */
+function readTypesFile(file) {
+  const give = reason => {
+    console.warn(`[program-maker] ${file} ${reason} 種別の定義は変更しません。`);
+    return null;
+  };
+  let raw;
+  try {
+    raw = fs.readFileSync(file, "utf8");
+  } catch (err) {
+    if (err.code === "ENOENT") return null;      // 未設置は正常
+    return give(`を読み込めませんでした（${err.message}）。`);
+  }
+
+  let parsed;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (err) {
+    return give("のJSONが不正です。");
+  }
+
+  const list = Array.isArray(parsed) ? parsed
+    : (parsed && typeof parsed === "object" && Array.isArray(parsed.types) ? parsed.types : null);
+  if (!list) return give("に types の配列がありません。");
+
+  const types = normalizeTypes(list);
+  if (!types.length) return give("に種別が1つもありません。");
+
+  return { types, fingerprint: crypto.createHash("sha256")
+    .update(JSON.stringify(types)).digest("hex").slice(0, 32) };
+}
 
 function defaultData(seed) {
   seed = seed || {};
@@ -28,10 +91,11 @@ function defaultData(seed) {
       notice: "",
       registrationOpen: true,
       registrationKey: seed.registrationKey || "",
-      types: DEFAULT_TYPES.map(t => Object.assign({ id: randomUUID() }, t))
+      types: normalizeTypes(DEFAULT_TYPES)
     },
     registrations: [],
-    timetable: null
+    timetable: null,
+    typesFingerprint: null
   };
 }
 
@@ -62,7 +126,8 @@ function migrate(data, seed) {
     registrations: Array.isArray(data.registrations)
       ? data.registrations.filter(r => r && typeof r === "object")
       : [],
-    timetable: data.timetable && typeof data.timetable === "object" ? data.timetable : null
+    timetable: data.timetable && typeof data.timetable === "object" ? data.timetable : null,
+    typesFingerprint: typeof data.typesFingerprint === "string" ? data.typesFingerprint : null
   };
 }
 
@@ -70,6 +135,7 @@ class Store {
   constructor(dataDir, seed) {
     this.dir = path.resolve(dataDir);
     this.file = path.join(this.dir, "registrations.json");
+    this.typesFile = TYPES_FILE;
     this.seed = seed || {};
     this.data = null;
     this._queue = Promise.resolve();
@@ -77,6 +143,7 @@ class Store {
 
   async init() {
     await fsp.mkdir(this.dir, { recursive: true });
+    const fromFile = readTypesFile(this.typesFile);
     let raw = null;
     try {
       raw = await fsp.readFile(this.file, "utf8");
@@ -86,22 +153,44 @@ class Store {
 
     if (raw == null) {
       this.data = defaultData(this.seed);
+      this._applyTypesFile(fromFile);
       await this._write();
-      return { created: true };
+      return { created: true, typesFile: fromFile ? this.typesFile : null };
     }
 
+    let recoveredFrom = null;
     try {
       this.data = migrate(JSON.parse(raw), this.seed);
     } catch (err) {
       // 壊れたファイルは捨てずに退避してから初期化する
-      const broken = this.file + ".broken-" + Date.now();
-      await fsp.rename(this.file, broken).catch(() => {});
+      recoveredFrom = this.file + ".broken-" + Date.now();
+      await fsp.rename(this.file, recoveredFrom).catch(() => {});
       this.data = defaultData(this.seed);
-      await this._write();
-      return { created: true, recoveredFrom: broken };
     }
+    const typesUpdated = this._applyTypesFile(fromFile);
     await this._write();   // migrate 結果を書き戻す
-    return { created: false };
+    return {
+      created: !!recoveredFrom, recoveredFrom,
+      typesFile: fromFile ? this.typesFile : null,
+      typesUpdated
+    };
+  }
+
+  /* 種別定義ファイルの内容を反映する。前回反映した内容から変わっていなければ何もしないので、
+     管理画面で種別を編集していても、ファイルを触らないかぎり再起動で戻ることはない。 */
+  _applyTypesFile(fromFile) {
+    if (!fromFile) return false;
+    if (this.data.typesFingerprint === fromFile.fingerprint) return false;
+
+    this.data.settings.types = fromFile.types.map(t => Object.assign({}, t));
+    this.data.typesFingerprint = fromFile.fingerprint;
+    // 種別名を変えたら既存の登録の表示名も追随させる（管理画面の設定保存と同じ扱い）
+    const byId = new Map(fromFile.types.map(t => [t.id, t]));
+    for (const r of this.data.registrations) {
+      const t = byId.get(r.typeId);
+      if (t) r.typeName = t.name;
+    }
+    return true;
   }
 
   /* データを読み書きする唯一の入口。fn は同期的に this.data を書き換えてよい。
