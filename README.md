@@ -6,7 +6,7 @@
 バックエンドは Node.js の標準ライブラリだけで動き（npm 依存なし）、データは JSON ファイル1つに保存します。
 
 **デモ（パスワード不要・データはブラウザ内のみ）**
-https://shok1122.github.io/timetable-maker/
+https://shok1122.github.io/program-maker/
 
 ## 画面構成
 
