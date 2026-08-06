@@ -8,10 +8,11 @@
 window.Timetable = (function () {
 
   /* ---------------- state ---------------- */
-  // 発表種別 {id, name, talk, qa}。設定タブの種別マスタが正で、ここでは編集しない。
+  // 発表種別 {id, name, talk, qa, emphasis}。設定タブの種別マスタが正で、ここでは編集しない。
   // CSVから取り込んだ種別など、マスタに無いものだけ末尾に残る。
   let talkTypes = [];
-  let customSlots = [{ id: uid(), start: "15:00", end: "15:15", label: "休憩", type: "break" }];
+  // 休憩の枠 {id, start, end, label}。発表以外の時間帯はすべてここで扱う。
+  let breakSlots = [{ id: uid(), start: "15:00", end: "15:15", label: "休憩" }];
   // 発表の並び順そのもの。手動で入れ替え可能で、再生成をまたいで保持される
   // {id, typeId, title, speaker, affiliation}
   let talkList = [];
@@ -89,11 +90,13 @@ window.Timetable = (function () {
     return {
       start: s.start, lunchOn: s.lunchOn, lunchStart: s.lunchStart, lunchEnd: s.lunchEnd,
       showGap: s.showGap,
-      talkTypes: talkTypes.map(t => ({ id: t.id, name: t.name, talk: t.talk, qa: t.qa })),
+      talkTypes: talkTypes.map(t => ({
+        id: t.id, name: t.name, talk: t.talk, qa: t.qa, emphasis: !!t.emphasis
+      })),
       talkList: talkList.map(e => ({
         id: e.id, typeId: e.typeId, title: e.title, speaker: e.speaker, affiliation: e.affiliation
       })),
-      customSlots: customSlots.map(c => ({ id: c.id, start: c.start, end: c.end, label: c.label, type: c.type })),
+      breakSlots: breakSlots.map(c => ({ id: c.id, start: c.start, end: c.end, label: c.label })),
       // CSVの時刻をそのまま使っている場合だけ、その時刻を保存して復元する
       absolute: absolute,
       items: absolute ? items.map(it => Object.assign({}, it)) : null,
@@ -134,7 +137,8 @@ window.Timetable = (function () {
           id: typeof t.id === "string" && t.id ? t.id : uid(),
           name: String(t.name == null ? "" : t.name) || `種別${i + 1}`,
           talk: Math.max(0, parseInt(t.talk, 10) || 0),
-          qa: Math.max(0, parseInt(t.qa, 10) || 0)
+          qa: Math.max(0, parseInt(t.qa, 10) || 0),
+          emphasis: t.emphasis === true
         }));
       }
       const known = new Set(talkTypes.map(t => t.id));
@@ -156,19 +160,22 @@ window.Timetable = (function () {
           });
       }
       applyMasterTypes(true);   // 下書きより設定タブの種別マスタを優先する
-      if (Array.isArray(draft.customSlots)) {
-        customSlots = draft.customSlots.filter(c => c && typeof c === "object").map(c => ({
+      // customSlots は特別枠があったころの下書き。休憩としてそのまま引き継ぐ
+      const slots = Array.isArray(draft.breakSlots) ? draft.breakSlots : draft.customSlots;
+      if (Array.isArray(slots)) {
+        breakSlots = slots.filter(c => c && typeof c === "object").map(c => ({
           id: typeof c.id === "string" && c.id ? c.id : uid(),
           start: String(c.start || ""), end: String(c.end || ""),
-          label: String(c.label == null ? "" : c.label),
-          type: c.type === "custom" ? "custom" : "break"
+          label: String(c.label == null ? "" : c.label)
         }));
       }
       renderSlots();
 
       if (draft.absolute && Array.isArray(draft.items) && draft.items.length) {
         absolute = true;
-        items = draft.items;
+        // 特別枠があったころの下書きの行は休憩として扱う
+        items = draft.items.map(it => it && it.type === "custom" ? Object.assign({}, it, { type: "break" }) : it);
+        applyTypesToItems();
         render();
         renderNotice([], "");
       } else {
@@ -186,7 +193,8 @@ window.Timetable = (function () {
       id: t.id,
       name: String(t.name == null ? "" : t.name),
       talk: Math.max(0, parseInt(t.talk, 10) || 0),
-      qa: Math.max(0, parseInt(t.qa, 10) || 0)
+      qa: Math.max(0, parseInt(t.qa, 10) || 0),
+      emphasis: t.emphasis === true
     }));
   }
 
@@ -204,10 +212,22 @@ window.Timetable = (function () {
     for (const t of talkTypes)
       if (!inMaster.has(t.id) && (!sync || used.has(t.id))) next.push(t);
 
-    const key = list => JSON.stringify(list.map(t => [t.id, t.name, t.talk, t.qa]));
+    const key = list => JSON.stringify(list.map(t => [t.id, t.name, t.talk, t.qa, !!t.emphasis]));
     const changed = key(next) !== key(talkTypes);
     talkTypes = next;
     return changed;
+  }
+
+  /* CSVの時刻をそのまま使っている状態（absolute）では時刻を振り直さないので、
+     種別の名称・色・強調だけを talkTypes の内容に合わせる。 */
+  function applyTypesToItems() {
+    const byId = new Map(talkTypes.map((t, i) => [t.id, { name: t.name || `種別${i + 1}`, i, emphasis: !!t.emphasis }]));
+    for (const it of items) {
+      if (it.type !== "talk") continue;
+      const e = talkList.find(x => x.id === it.entryId);
+      const t = e && byId.get(e.typeId);
+      if (t) { it.typeName = t.name; it.colorIdx = t.i; it.emph = t.emphasis; }
+    }
   }
 
   /* ---------------- 参加登録からの読み込み ---------------- */
@@ -284,7 +304,8 @@ window.Timetable = (function () {
     // 発表種別
     const specById = new Map();
     talkTypes.forEach((t, i) => {
-      specById.set(t.id, { id: t.id, name: t.name || `種別${i + 1}`, len: typeLen(t), colorIdx: i });
+      specById.set(t.id, { id: t.id, name: t.name || `種別${i + 1}`, len: typeLen(t),
+                           colorIdx: i, emphasis: !!t.emphasis });
     });
 
     // 種別が無くなった発表は落とす
@@ -309,10 +330,10 @@ window.Timetable = (function () {
       if (ls != null && le != null && le > ls) fixed.push({ type: "lunch", start: ls, end: le, label: "ランチ" });
       else warnings.push("ランチの時刻が不正です（開始<終了で指定してください）。");
     }
-    customSlots.forEach(c => {
+    breakSlots.forEach(c => {
       const cs = toMin(c.start), ce = toMin(c.end);
-      if (cs != null && ce != null && ce > cs) fixed.push({ type: c.type, start: cs, end: ce, label: c.label || "（無題）" });
-      else if (c.start || c.end || c.label) warnings.push(`特別枠「${c.label || "無題"}」の時刻が不正です。`);
+      if (cs != null && ce != null && ce > cs) fixed.push({ type: "break", start: cs, end: ce, label: c.label || "（無題）" });
+      else if (c.start || c.end || c.label) warnings.push(`休憩「${c.label || "無題"}」の時刻が不正です。`);
     });
     fixed.sort((a, b) => a.start - b.start || a.end - b.end);
 
@@ -342,7 +363,7 @@ window.Timetable = (function () {
         if (to != null && cursor + spec.len > to) break;
         out.push({
           type: "talk", start: cursor, end: cursor + spec.len,
-          entryId: e.id, typeName: spec.name, colorIdx: spec.colorIdx,
+          entryId: e.id, typeName: spec.name, colorIdx: spec.colorIdx, emph: spec.emphasis,
           title: e.title, speaker: joinSpeaker(e.speaker, e.affiliation)
         });
         cursor += spec.len; li++;
@@ -368,8 +389,7 @@ window.Timetable = (function () {
   const KIND = {
     talk:   { label: "発表",   cls: "talk" },
     lunch:  { label: "ランチ", cls: "lunch" },
-    break:  { label: "休憩",   cls: "break" },
-    custom: { label: "特別",   cls: "custom" }
+    break:  { label: "休憩",   cls: "break" }
   };
 
   function render() {
@@ -412,8 +432,11 @@ window.Timetable = (function () {
 
       if (it.type === "talk") {
         const c = typeColor(it.colorIdx || 0);
+        // 強調する種別（設定タブで指定）は行に背景色を敷いて目立たせる
+        const em = !!it.emph;
         talkNo++;
-        rows += `<tr data-idx="${idx}" data-entry="${esc(it.entryId)}">
+        rows += `<tr data-idx="${idx}" data-entry="${esc(it.entryId)}"${
+          em ? ` class="row-emph" style="background:${c.bg};--emph:${c.chip}"` : ""}>
           <td class="c-move"><div class="cell mv">
             <span class="grip" draggable="true" data-id="${esc(it.entryId)}" title="ドラッグで並べ替え">⠿</span>
             <span class="arrows">
@@ -425,7 +448,8 @@ window.Timetable = (function () {
             <span class="chip" style="background:${c.chip}"></span>
             <span class="rng">${toStr(it.start)}<small>– ${toStr(it.end)}</small></span>
           </div></div></td>
-          <td class="c-kind"><div class="cell"><span class="badge" style="background:${c.bg};color:${c.fg}">${esc(it.typeName || "発表")}</span></div></td>
+          <td class="c-kind"><div class="cell"><span class="badge" style="background:${
+            em ? c.chip : c.bg};color:${em ? "#fff" : c.fg}">${esc(it.typeName || "発表")}</span></div></td>
           <td><div class="cell" style="padding:7px 10px">
             <input class="title-in" data-field="title" data-idx="${idx}" placeholder="発表タイトル（${talkNo}）" value="${esc(it.title)}">
             <input class="sub-in" data-field="speaker" data-idx="${idx}" placeholder="発表者 / 所属" value="${esc(it.speaker)}">
@@ -446,7 +470,7 @@ window.Timetable = (function () {
           <td class="c-del"></td>
         </tr>`;
       } else {
-        const k = KIND[it.type] || KIND.custom;
+        const k = KIND[it.type] || KIND.break;
         rows += `<tr class="row-${it.type}">
           <td class="c-move"></td>
           <td class="c-time"><div class="cell"><div class="time-range">
@@ -516,9 +540,12 @@ window.Timetable = (function () {
         <td>${esc(e.speaker)}</td>
         <td class="u-org">${esc(e.affiliation)}</td>
       </tr>`).join("");
-      return `<div class="board untimed">
+      const c = typeColor(g.i);
+      const em = !!g.t.emphasis;
+      return `<div class="board untimed${em ? " emph" : ""}"${
+        em ? ` style="--emph:${c.chip};--emph-bg:${c.bg}"` : ""}>
         <div class="board-head">
-          <span class="ttl"><i class="sw" style="background:${typeColor(g.i).chip}"></i>${
+          <span class="ttl"><i class="sw" style="background:${c.chip}"></i>${
             esc(g.t.name || `種別${g.i + 1}`)}</span>
           <div class="summary" style="font-size:11px"><span>発表 <b>${g.list.length}</b> 件</span></div>
         </div>
@@ -542,9 +569,8 @@ window.Timetable = (function () {
       seg.push(`<span><i style="background:${typeColor(i).chip}"></i>${esc(name)} ${typeLen(t)}分</span>`);
     });
     const has = k => items.some(i => i.type === k);
-    if (has("lunch"))  seg.push(`<span><i style="background:var(--lunch)"></i>ランチ</span>`);
-    if (has("break"))  seg.push(`<span><i style="background:var(--break)"></i>休憩</span>`);
-    if (has("custom")) seg.push(`<span><i style="background:var(--custom)"></i>特別</span>`);
+    if (has("lunch")) seg.push(`<span><i style="background:var(--lunch)"></i>ランチ</span>`);
+    if (has("break")) seg.push(`<span><i style="background:var(--break)"></i>休憩</span>`);
     $("#tt-legend").innerHTML = seg.join("");
   }
 
@@ -574,7 +600,8 @@ window.Timetable = (function () {
       const base = items.length ? items[items.length - 1].end : (toMin($("#tt-start").value) || 0);
       items.push({
         type: "talk", start: base, end: base + typeLen(t), entryId: e.id,
-        typeName: t.name || "発表", colorIdx: talkTypes.indexOf(t), title: "", speaker: ""
+        typeName: t.name || "発表", colorIdx: talkTypes.indexOf(t), emph: !!t.emphasis,
+        title: "", speaker: ""
       });
       render();
       scheduleSave();
@@ -640,32 +667,29 @@ window.Timetable = (function () {
     for (const e of talkList) n.set(e.typeId, (n.get(e.typeId) || 0) + 1);
 
     box.innerHTML = talkTypes.map((t, i) => `
-      <div class="type-ro" title="${esc(t.name)}">
+      <div class="type-ro" title="${esc(t.name)}${t.emphasis ? "（強調）" : ""}">
         <span class="swatch" style="background:${typeColor(i).chip}"></span>
-        <span class="nm">${esc(t.name || `種別${i + 1}`)}</span>
+        <span class="nm">${esc(t.name || `種別${i + 1}`)}${t.emphasis
+          ? `<i class="emph-mark" style="color:${typeColor(i).chip}" title="強調表示">★</i>` : ""}</span>
         <span class="len">${typeLen(t) > 0 ? `${t.talk}+${t.qa}分` : "時間なし"}</span>
         <span class="cnt">${n.get(t.id) || 0}件</span>
       </div>`).join("");
   }
 
-  /* ---------------- slots editor ---------------- */
+  /* ---------------- 休憩エディタ ---------------- */
   function renderSlots() {
     const box = $("#tt-slots");
-    if (!customSlots.length) {
-      box.innerHTML = `<div class="slot-empty">枠はまだありません</div>`;
+    if (!breakSlots.length) {
+      box.innerHTML = `<div class="slot-empty">休憩はまだありません</div>`;
       return;
     }
-    box.innerHTML = customSlots.map(c => `
+    box.innerHTML = breakSlots.map(c => `
       <div class="slot-row" data-id="${esc(c.id)}">
         <div class="times">
           <input type="time" data-k="start" value="${esc(c.start || "")}">
           <input type="time" data-k="end" value="${esc(c.end || "")}">
         </div>
-        <input class="name" type="text" data-k="label" placeholder="名称（休憩・基調講演 等）" value="${esc(c.label)}">
-        <select class="type" data-k="type">
-          <option value="break" ${c.type === "break" ? "selected" : ""}>休憩</option>
-          <option value="custom" ${c.type === "custom" ? "selected" : ""}>特別</option>
-        </select>
+        <input class="name" type="text" data-k="label" placeholder="名称（休憩・コーヒーブレイク 等）" value="${esc(c.label)}">
         <button class="kill" data-del="${esc(c.id)}" title="削除">×</button>
       </div>`).join("");
   }
@@ -680,7 +704,7 @@ window.Timetable = (function () {
     const lines = [header.map(csvCell).join(",")];
     for (const it of items) {
       if (it.type === "gap") continue;
-      const kind = (KIND[it.type] || {}).label || "特別";
+      const kind = (KIND[it.type] || KIND.break).label;
       const title = it.type === "talk" ? it.title : it.label;
       const speaker = it.type === "talk" ? it.speaker : "";
       const tname = it.type === "talk" ? (it.typeName || "") : "";
@@ -715,7 +739,8 @@ window.Timetable = (function () {
     return rows.filter(r => r.some(c => c.trim() !== ""));
   }
 
-  const KIND_FROM = { "発表": "talk", "ランチ": "lunch", "昼食": "lunch", "休憩": "break", "特別": "custom" };
+  // 「特別」は特別枠があったころのエクスポート。休憩として読み込む
+  const KIND_FROM = { "発表": "talk", "ランチ": "lunch", "昼食": "lunch", "休憩": "break", "特別": "break" };
 
   /* 見出し行から列の位置を推定する（見出しが無ければ null）。
      時刻の列が無いCSV（発表種別だけを並べたもの）も読めるようにするため、
@@ -770,7 +795,7 @@ window.Timetable = (function () {
     }
 
     const talks = [];    // 発表（CSVの並び順）
-    const fixed = [];    // 時刻付きの休憩・特別枠
+    const fixed = [];    // 時刻付きの休憩
     const dropped = [];  // 時刻が無く配置できなかった枠
     let lunch = null, untimed = 0;
 
@@ -782,7 +807,7 @@ window.Timetable = (function () {
 
       if (!kindRaw)                 type = "talk";
       else if (KIND_FROM[kindRaw])  type = KIND_FROM[kindRaw];
-      else if (timed)               type = "custom";
+      else if (timed)               type = "break";       // 知らない種別でも時刻があれば休憩として置く
       else { type = "talk"; if (!tname) tname = kindRaw; }  // 時刻の無い行は固定枠にできないので発表として扱う
 
       if (type === "talk") {
@@ -794,7 +819,7 @@ window.Timetable = (function () {
       } else if (type === "lunch") {
         lunch = { start: s, end: e, label: title || "ランチ" };
       } else {
-        fixed.push({ type, start: s, end: e, label: title || (type === "break" ? "休憩" : "特別") });
+        fixed.push({ type: "break", start: s, end: e, label: title || "休憩" });
       }
     }
 
@@ -852,14 +877,14 @@ window.Timetable = (function () {
 
     // 状態を差し替える（CSVに出てこない種別は残さない。件数だけ0にすると次の読み込みで溜まっていく）
     talkTypes = (talks.length ? defs.filter(t => t.count > 0) : defs)
-      .map(t => ({ id: t.id, name: t.name, talk: t.talk, qa: t.qa }));
+      .map(t => ({ id: t.id, name: t.name, talk: t.talk, qa: t.qa, emphasis: !!t.emphasis }));
     talkList = talks.map(t => {
       const who = splitSpeaker(t.speaker);   // 「発表者（所属）」の形なら所属を取り出す
       return { id: uid(), typeId: t.group.def.id, title: t.title,
                speaker: who.speaker, affiliation: who.affiliation };
     });
     applyMasterTypes(false);   // CSVに無かった種別も「＋ 発表を追加」から選べるように残す
-    customSlots = fixed.map(f => ({ id: uid(), start: toStr(f.start), end: toStr(f.end), label: f.label, type: f.type }));
+    breakSlots = fixed.map(f => ({ id: uid(), start: toStr(f.start), end: toStr(f.end), label: f.label }));
     $("#tt-lunch-on").checked = !!lunch;
     if (lunch) { $("#tt-lunch-start").value = toStr(lunch.start); $("#tt-lunch-end").value = toStr(lunch.end); }
     renderSlots();
@@ -870,6 +895,7 @@ window.Timetable = (function () {
         const ci = talkTypes.findIndex(x => x.id === t.group.def.id);
         return { type: "talk", start: t.start, end: t.end, entryId: talkList[i].id,
                  typeName: t.group.def.name || `種別${ci + 1}`, colorIdx: ci < 0 ? 0 : ci,
+                 emph: ci >= 0 && !!talkTypes[ci].emphasis,
                  title: t.title, speaker: t.speaker };
       });
       if (lunch) out.push({ type: "lunch", start: lunch.start, end: lunch.end, label: lunch.label });
@@ -926,25 +952,25 @@ window.Timetable = (function () {
     // 発表の追加（表の下）
     $("#tt-add-talk").addEventListener("click", () => addTalk($("#tt-add-kind").value));
 
-    // custom slot add
+    // 休憩の追加
     $("#tt-add-slot").addEventListener("click", () => {
-      const last = customSlots[customSlots.length - 1];
+      const last = breakSlots[breakSlots.length - 1];
       const base = last ? toMin(last.end) : toMin($("#tt-start").value);
       const s = base != null ? toStr(base) : "15:00";
       const e = base != null ? toStr(base + 15) : "15:15";
-      customSlots.push({ id: uid(), start: s, end: e, label: "休憩", type: "break" });
+      breakSlots.push({ id: uid(), start: s, end: e, label: "休憩" });
       renderSlots(); generate();
     });
-    // custom slot edit / delete (delegation)
+    // 休憩の編集・削除（委譲）
     $("#tt-slots").addEventListener("input", e => {
       const row = e.target.closest(".slot-row"); if (!row) return;
-      const c = customSlots.find(x => x.id === row.dataset.id); if (!c) return;
+      const c = breakSlots.find(x => x.id === row.dataset.id); if (!c) return;
       const k = e.target.dataset.k; if (k) c[k] = e.target.value;
       generate();
     });
     $("#tt-slots").addEventListener("click", e => {
       const del = e.target.dataset.del; if (!del) return;
-      customSlots = customSlots.filter(x => x.id !== del);
+      breakSlots = breakSlots.filter(x => x.id !== del);
       renderSlots(); generate();
     });
 
@@ -1039,14 +1065,8 @@ window.Timetable = (function () {
     if (!applyMasterTypes(true)) return;
 
     if (absolute) {
-      // CSVの時刻はそのまま。種別の名称と色だけ設定タブの内容に合わせる
-      const byId = new Map(talkTypes.map((t, i) => [t.id, { name: t.name || `種別${i + 1}`, i }]));
-      for (const it of items) {
-        if (it.type !== "talk") continue;
-        const e = talkList.find(x => x.id === it.entryId);
-        const t = e && byId.get(e.typeId);
-        if (t) { it.typeName = t.name; it.colorIdx = t.i; }
-      }
+      // CSVの時刻はそのまま。種別の名称・色・強調だけ設定タブの内容に合わせる
+      applyTypesToItems();
       render();
       scheduleSave();
     } else {

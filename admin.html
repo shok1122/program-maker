@@ -117,21 +117,21 @@
             <label class="inline-check">
               <input type="checkbox" id="tt-showgap" checked> 空き時間を表示
             </label>
-            <div class="hint">発表とランチ・特別枠のあいだにできた空き時間を、表に行として出します。</div>
+            <div class="hint">発表とランチ・休憩のあいだにできた空き時間を、表に行として出します。</div>
+          </div>
+
+          <div class="panel">
+            <h2>休憩</h2>
+            <div class="slots" id="tt-slots"></div>
+            <button class="btn ghost block small" id="tt-add-slot" style="margin-top:11px">＋ 休憩を追加</button>
+            <div class="hint">発表のあいだに入れる休憩の時間帯を、いくつでも定義できます。<br>基調講演・授賞式など発表以外のプログラムは、<b>設定</b>タブで発表種別として定義してください。</div>
           </div>
 
           <div class="panel">
             <h2>発表種別<span class="tail">設定タブで編集</span></h2>
             <div class="types" id="tt-types"></div>
             <button class="btn ghost block small" id="tt-goto-set" style="margin-top:11px">設定タブで種別を編集</button>
-            <div class="hint">1コマ = 発表 + 質疑。種別の追加・名称・時間の変更は<b>設定</b>タブで行います。<br>発表の追加は表の下の<b>＋ 発表を追加</b>、削除は行の<b>×</b>から。順序は行を<b>ドラッグ</b>、または<b>▲▼</b>で入れ替えられます（時刻は自動で振り直されます）。</div>
-          </div>
-
-          <div class="panel">
-            <h2>特別枠 / 休憩</h2>
-            <div class="slots" id="tt-slots"></div>
-            <button class="btn ghost block small" id="tt-add-slot" style="margin-top:11px">＋ 枠を追加</button>
-            <div class="hint">休憩・基調講演・ポスター・授賞式など、発表以外の時間帯を自由に定義できます。</div>
+            <div class="hint">1コマ = 発表 + 質疑。種別の追加・名称・時間・強調の変更は<b>設定</b>タブで行います（★は強調表示する種別）。<br>発表の追加は表の下の<b>＋ 発表を追加</b>、削除は行の<b>×</b>から。順序は行を<b>ドラッグ</b>、または<b>▲▼</b>で入れ替えられます（時刻は自動で振り直されます）。</div>
           </div>
         </div>
 
@@ -222,6 +222,7 @@
             <div class="hint">
               ここで定義した種別が参加登録ページの「種別」ドロップダウンになります。
               発表時間・質疑応答時間はタイムテーブル作成時のコマ長として使われます（ポスター発表など時間を割り当てない種別は0でも構いません）。
+              <br><b>強調</b>を入れた種別は、タイムテーブルで行に背景色が付き、基調講演・授賞式などが目立つように表示されます。
               <br>すでに登録がある種別を削除すると、その登録は種別なしになります。
             </div>
           </div>

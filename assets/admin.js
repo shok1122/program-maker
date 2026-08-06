@@ -282,6 +282,9 @@
         <div class="head">
           <input class="name" type="text" data-k="name" maxlength="60"
                  placeholder="種別名（一般講演 等）" value="${esc(t.name)}">
+          <label class="emph-check" title="タイムテーブルで行に背景色を付けて強調します">
+            <input type="checkbox" data-k="emphasis"${t.emphasis ? " checked" : ""}> 強調
+          </label>
         </div>
         <button class="kill" data-del="${i}" title="削除"${used ? ' data-used="' + used + '"' : ""}>×</button>
         <div class="nums" style="grid-template-columns:1fr 1fr 1fr">
@@ -309,7 +312,9 @@
     $("#st-event").value = s.eventName || "";
     $("#st-notice").value = s.notice || "";
     $("#st-url").value = new URL("index.html", location.href).href;
-    draftTypes = s.types.map(t => ({ id: t.id, name: t.name, talk: t.talk, qa: t.qa }));
+    draftTypes = s.types.map(t => ({
+      id: t.id, name: t.name, talk: t.talk, qa: t.qa, emphasis: t.emphasis === true
+    }));
     renderSettingTypes();
     setSettingStatus("変更後に押してください。");
   }
@@ -325,6 +330,7 @@
     const t = draftTypes[+row.dataset.i]; if (!t) return;
     const k = e.target.dataset.k; if (!k) return;
     if (k === "name") t.name = e.target.value;
+    else if (k === "emphasis") t.emphasis = e.target.checked;
     else t[k] = Math.min(600, Math.max(0, parseInt(e.target.value, 10) || 0));
   });
   $("#st-types").addEventListener("click", e => {
@@ -338,7 +344,8 @@
   });
   $("#st-add-type").addEventListener("click", () => {
     const last = draftTypes[draftTypes.length - 1];
-    draftTypes.push({ id: null, name: "", talk: last ? last.talk : 12, qa: last ? last.qa : 3 });
+    draftTypes.push({ id: null, name: "", talk: last ? last.talk : 12, qa: last ? last.qa : 3,
+                      emphasis: false });
     renderSettingTypes();
     const inputs = $("#st-types").querySelectorAll('input[data-k="name"]');
     if (inputs.length) inputs[inputs.length - 1].focus();
@@ -355,7 +362,9 @@
         notice: $("#st-notice").value,
         registrationOpen: $("#st-open").checked,
         registrationKey: $("#st-key").value,
-        types: draftTypes.map(t => ({ id: t.id || undefined, name: t.name, talk: t.talk, qa: t.qa }))
+        types: draftTypes.map(t => ({
+          id: t.id || undefined, name: t.name, talk: t.talk, qa: t.qa, emphasis: !!t.emphasis
+        }))
       });
       state.settings = res.settings;
       // 種別名の変更は既存の登録の表示名にも反映されるので、一覧を取り直す

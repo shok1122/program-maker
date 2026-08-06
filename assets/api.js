@@ -118,7 +118,7 @@ window.TM = (function () {
     const types = [
       { id: uid(), name: "一般講演", talk: 12, qa: 3 },
       { id: uid(), name: "学生講演", talk: 10, qa: 5 },
-      { id: uid(), name: "招待講演", talk: 30, qa: 10 },
+      { id: uid(), name: "招待講演", talk: 30, qa: 10, emphasis: true },
       { id: uid(), name: "ポスター発表", talk: 3, qa: 0 }
     ];
     const samples = [
@@ -208,7 +208,8 @@ window.TM = (function () {
             id,
             name: oneLine(t.name, LIMITS.typeName) || ("種別" + (i + 1)),
             talk: Math.min(600, Math.max(0, Math.round(+t.talk) || 0)),
-            qa: Math.min(600, Math.max(0, Math.round(+t.qa) || 0))
+            qa: Math.min(600, Math.max(0, Math.round(+t.qa) || 0)),
+            emphasis: t.emphasis === true
           };
         });
         if (!next.length) throw fail("種別は1つ以上必要です。");

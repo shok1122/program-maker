@@ -40,11 +40,14 @@ function normalizeTypes(list) {
     let id = typeof t.id === "string" && /^[\w-]{1,64}$/.test(t.id) ? t.id : idFromName(name);
     if (seen.has(id)) id = `${id}-${i + 1}`;      // 同名が並んでいた場合
     seen.add(id);
-    out.push({
+    const type = {
       id, name,
       talk: Number.isFinite(+t.talk) ? Math.min(600, Math.max(0, Math.round(+t.talk))) : 0,
       qa: Number.isFinite(+t.qa) ? Math.min(600, Math.max(0, Math.round(+t.qa))) : 0
-    });
+    };
+    // 既存の設置ファイルの指紋を変えないよう、強調するときだけ持たせる
+    if (t.emphasis === true) type.emphasis = true;
+    out.push(type);
   });
   return out;
 }
@@ -119,7 +122,8 @@ function migrate(data, seed) {
             id: typeof t.id === "string" && t.id ? t.id : randomUUID(),
             name: String(t.name == null ? "" : t.name),
             talk: Number.isFinite(+t.talk) ? Math.max(0, Math.round(+t.talk)) : 0,
-            qa: Number.isFinite(+t.qa) ? Math.max(0, Math.round(+t.qa)) : 0
+            qa: Number.isFinite(+t.qa) ? Math.max(0, Math.round(+t.qa)) : 0,
+            emphasis: t.emphasis === true
           }))
         : base.settings.types
     },

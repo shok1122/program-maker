@@ -323,7 +323,8 @@ async function handleApi(req, res, url) {
           const id = typeof t.id === "string" && /^[\w-]{1,64}$/.test(t.id) && !seen.has(t.id)
             ? t.id : crypto.randomUUID();
           seen.add(id);
-          next.push({ id, name, talk: int(t.talk, 0, 600, 0), qa: int(t.qa, 0, 600, 0) });
+          next.push({ id, name, talk: int(t.talk, 0, 600, 0), qa: int(t.qa, 0, 600, 0),
+                      emphasis: t.emphasis === true });
         });
         if (!next.length)
           throw Object.assign(new Error("種別は1つ以上必要です。"), { status: 400 });
