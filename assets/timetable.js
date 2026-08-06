@@ -8,14 +8,16 @@
 window.Timetable = (function () {
 
   /* ---------------- state ---------------- */
-  // 発表種別。count: 件数（null = 空欄。現在の件数を維持する）
-  let talkTypes = [{ id: uid(), name: "発表", talk: 12, qa: 3, count: 20 }];
+  // 発表種別 {id, name, talk, qa}。設定タブの種別マスタが正で、ここでは編集しない。
+  // CSVから取り込んだ種別など、マスタに無いものだけ末尾に残る。
+  let talkTypes = [];
   let customSlots = [{ id: uid(), start: "15:00", end: "15:15", label: "休憩", type: "break" }];
   // 発表の並び順そのもの。手動で入れ替え可能で、再生成をまたいで保持される
   // {id, typeId, title, speaker}
   let talkList = [];
   let items = [];         // rendered rows
   let refocus = null;     // 再描画後にフォーカスを戻す並べ替えボタン
+  let focusEntry = null;  // 再描画後にタイトル欄へフォーカスする発表（追加した直後）
   let noticeLead = null;  // 次の generate() の通知に前置するメッセージ {msgs,type}
   let absolute = false;   // CSVの時刻をそのまま使っている状態か
 
@@ -73,7 +75,7 @@ window.Timetable = (function () {
     return {
       start: s.start, lunchOn: s.lunchOn, lunchStart: s.lunchStart, lunchEnd: s.lunchEnd,
       showGap: s.showGap,
-      talkTypes: talkTypes.map(t => ({ id: t.id, name: t.name, talk: t.talk, qa: t.qa, count: t.count })),
+      talkTypes: talkTypes.map(t => ({ id: t.id, name: t.name, talk: t.talk, qa: t.qa })),
       talkList: talkList.map(e => ({ id: e.id, typeId: e.typeId, title: e.title, speaker: e.speaker })),
       customSlots: customSlots.map(c => ({ id: c.id, start: c.start, end: c.end, label: c.label, type: c.type })),
       // CSVの時刻をそのまま使っている場合だけ、その時刻を保存して復元する
@@ -116,8 +118,7 @@ window.Timetable = (function () {
           id: typeof t.id === "string" && t.id ? t.id : uid(),
           name: String(t.name == null ? "" : t.name) || `種別${i + 1}`,
           talk: Math.max(0, parseInt(t.talk, 10) || 0),
-          qa: Math.max(0, parseInt(t.qa, 10) || 0),
-          count: t.count == null ? null : Math.max(0, parseInt(t.count, 10) || 0)
+          qa: Math.max(0, parseInt(t.qa, 10) || 0)
         }));
       }
       const known = new Set(talkTypes.map(t => t.id));
@@ -131,6 +132,7 @@ window.Timetable = (function () {
             speaker: String(e.speaker == null ? "" : e.speaker)
           }));
       }
+      applyMasterTypes(true);   // 下書きより設定タブの種別マスタを優先する
       if (Array.isArray(draft.customSlots)) {
         customSlots = draft.customSlots.filter(c => c && typeof c === "object").map(c => ({
           id: typeof c.id === "string" && c.id ? c.id : uid(),
@@ -139,7 +141,6 @@ window.Timetable = (function () {
           type: c.type === "custom" ? "custom" : "break"
         }));
       }
-      renderTypes();
       renderSlots();
 
       if (draft.absolute && Array.isArray(draft.items) && draft.items.length) {
@@ -156,6 +157,36 @@ window.Timetable = (function () {
     }
   }
 
+  /* ---------------- 種別マスタ（設定タブ）との同期 ---------------- */
+  function masterTypes() {
+    return ((((ctx || {}).source) || {}).types || []).map(t => ({
+      id: t.id,
+      name: String(t.name == null ? "" : t.name),
+      talk: Math.max(0, parseInt(t.talk, 10) || 0),
+      qa: Math.max(0, parseInt(t.qa, 10) || 0)
+    }));
+  }
+
+  /* 発表種別は設定タブでしか編集できないので、マスタの内容をこちらへ取り込む。
+     sync=true … 名称・時間もマスタで上書きし、マスタにも発表にも無い種別は落とす
+     sync=false … マスタに無い種別（CSV由来など）はそのまま残し、足りない種別だけ足す
+     並びが変わったかどうかを返す。 */
+  function applyMasterTypes(sync) {
+    const master = masterTypes();
+    if (!master.length) return false;
+    const cur = new Map(talkTypes.map(t => [t.id, t]));
+    const used = new Set(talkList.map(e => e.typeId));
+    const next = master.map(m => (!sync && cur.get(m.id)) || m);
+    const inMaster = new Set(master.map(m => m.id));
+    for (const t of talkTypes)
+      if (!inMaster.has(t.id) && (!sync || used.has(t.id))) next.push(t);
+
+    const key = list => JSON.stringify(list.map(t => [t.id, t.name, t.talk, t.qa]));
+    const changed = key(next) !== key(talkTypes);
+    talkTypes = next;
+    return changed;
+  }
+
   /* ---------------- 参加登録からの読み込み ---------------- */
   function speakerLine(r) {
     const who = String(r.speaker || "").trim();
@@ -168,46 +199,35 @@ window.Timetable = (function () {
   function loadFromRegistrations(quiet) {
     const src = (ctx && ctx.source) || { registrations: [], types: [] };
     const regs = src.registrations || [];
-    const master = (src.types || []).map(t => ({
-      id: t.id, name: t.name, talk: t.talk || 0, qa: t.qa || 0, count: 0
-    }));
+    const master = masterTypes();
 
     const byId = new Map(master.map(t => [t.id, t]));
-    const nextTypes = master.slice();
+    const orphanTypes = [];
     const orphan = [];
 
+    talkList = [];
     for (const r of regs) {
       let def = byId.get(r.typeId);
       if (!def) {
         // 種別マスタから削除された種別。登録に残っている名前で仮の種別を作る
         const name = String(r.typeName || "").trim() || "種別不明";
-        def = nextTypes.find(t => t.__orphan && t.name === name);
+        def = orphanTypes.find(t => t.name === name);
         if (!def) {
           const donor = master[0];
-          def = { id: "orphan-" + uid(), name, talk: donor ? donor.talk : 12,
-                  qa: donor ? donor.qa : 3, count: 0, __orphan: true };
-          nextTypes.push(def);
+          def = { id: "orphan-" + uid(), name,
+                  talk: donor ? donor.talk : 12, qa: donor ? donor.qa : 3 };
+          orphanTypes.push(def);
           orphan.push(name);
         }
         byId.set(r.typeId, def);
       }
-      def.count++;
+      talkList.push({ id: uid(), typeId: def.id, title: r.title || "", speaker: speakerLine(r) });
     }
 
-    const used = nextTypes.filter(t => t.count > 0);
-    talkTypes = (used.length ? used : nextTypes).map(t => ({
-      id: t.id, name: t.name, talk: t.talk, qa: t.qa, count: t.count
-    }));
-    const live = new Set(talkTypes.map(t => t.id));
-
-    talkList = regs.map(r => {
-      const def = byId.get(r.typeId);
-      const typeId = def && live.has(def.id) ? def.id : (talkTypes[0] ? talkTypes[0].id : null);
-      return { id: uid(), typeId, title: r.title || "", speaker: speakerLine(r) };
-    }).filter(e => e.typeId);
+    // マスタの種別はすべて残す（発表が0件でも「＋ 発表を追加」から選べるように）
+    talkTypes = master.concat(orphanTypes);
 
     absolute = false;
-    renderTypes();
     renderSlots();
 
     const msgs = [`参加登録 ${talkList.length} 件を発表順として読み込みました。`];
@@ -244,26 +264,23 @@ window.Timetable = (function () {
     // 発表種別
     const specById = new Map();
     talkTypes.forEach((t, i) => {
-      const spec = { id: t.id, name: t.name || `種別${i + 1}`, len: typeLen(t), colorIdx: i };
-      specById.set(t.id, spec);
-      if (spec.len <= 0 && t.count !== 0)
-        warnings.push(`発表種別「${spec.name}」は発表＋質疑が0分のため配置しません。`);
+      specById.set(t.id, { id: t.id, name: t.name || `種別${i + 1}`, len: typeLen(t), colorIdx: i });
     });
 
-    // 発表リストを種別の件数に合わせる（並び順は保持し、増減は末尾で行う）
+    // 種別が無くなった発表は落とす
     talkList = talkList.filter(e => specById.has(e.typeId));
-    for (const t of talkTypes) {
-      if (t.count == null) continue;   // 空欄＝現在の件数のまま
-      const idxs = [];
-      talkList.forEach((e, i) => { if (e.typeId === t.id) idxs.push(i); });
-      if (idxs.length > t.count) {
-        const drop = new Set(idxs.slice(t.count));       // 後ろの分から削除
-        talkList = talkList.filter((e, i) => !drop.has(i));
-      } else {
-        for (let n = idxs.length; n < t.count; n++) talkList.push(newEntry(t.id));
-      }
+
+    // 発表＋質疑が0分の種別は時間を取れないので表に出せない
+    const zero = new Map();
+    for (const e of talkList) {
+      const spec = specById.get(e.typeId);
+      if (spec.len <= 0) zero.set(spec.name, (zero.get(spec.name) || 0) + 1);
     }
-    if (!talkList.length) warnings.push("発表が0件です。「登録一覧から読み込む」か、発表種別の件数を指定してください。");
+    for (const [name, n] of zero)
+      warnings.push(`発表種別「${name}」は発表＋質疑が0分のため、${n}件を配置しませんでした（時間は「設定」タブで指定できます）。`);
+
+    if (!talkList.length)
+      warnings.push("発表が0件です。「登録一覧から読み込む」か、表の下の「＋ 発表を追加」で追加してください。");
 
     // collect fixed slots
     let fixed = [];
@@ -338,6 +355,9 @@ window.Timetable = (function () {
   function render() {
     const body = $("#tt-board");
 
+    renderTypes();
+    renderAddBar();
+
     const talkItems = items.filter(i => i.type === "talk");
     const total = items.length ? items[items.length - 1].end - items[0].start : 0;
 
@@ -358,7 +378,8 @@ window.Timetable = (function () {
     renderLegend();
 
     if (!items.length) {
-      body.innerHTML = `<div class="empty-board"><b>タイムテーブルが空です</b>「登録一覧から読み込む」か、発表種別の件数を指定してください。</div>`;
+      body.innerHTML = `<div class="empty-board"><b>タイムテーブルが空です</b>「登録一覧から読み込む」か、下の「＋ 発表を追加」から作りはじめてください。</div>`;
+      refocus = null; focusEntry = null;
       return;
     }
 
@@ -389,6 +410,7 @@ window.Timetable = (function () {
             <input class="sub-in" data-field="speaker" data-idx="${idx}" placeholder="発表者 / 所属" value="${esc(it.speaker)}">
           </div></td>
           <td class="c-dur"><div class="cell">${dur}分</div></td>
+          <td class="c-del"><button class="del-btn" data-del-entry="${esc(it.entryId)}" title="この発表を削除">×</button></td>
         </tr>`;
       } else if (it.type === "gap") {
         rows += `<tr class="row-gap">
@@ -400,6 +422,7 @@ window.Timetable = (function () {
           <td class="c-kind"><div class="cell"></div></td>
           <td><div class="cell fixed-label" style="font-weight:400;font-style:italic;color:var(--ink-faint)">空き時間</div></td>
           <td class="c-dur"><div class="cell">${dur}分</div></td>
+          <td class="c-del"></td>
         </tr>`;
       } else {
         const k = KIND[it.type] || KIND.custom;
@@ -412,13 +435,14 @@ window.Timetable = (function () {
           <td class="c-kind"><div class="cell"><span class="badge ${k.cls}">${k.label}</span></div></td>
           <td><div class="cell fixed-label">${esc(it.label)}</div></td>
           <td class="c-dur"><div class="cell">${dur}分</div></td>
+          <td class="c-del"></td>
         </tr>`;
       }
     }
 
     body.innerHTML = `<table>
       <thead><tr>
-        <th class="c-move"></th><th>時刻</th><th>種別</th><th>内容</th><th style="text-align:right">時間</th>
+        <th class="c-move"></th><th>時刻</th><th>種別</th><th>内容</th><th style="text-align:right">時間</th><th class="c-del"></th>
       </tr></thead>
       <tbody>${rows}</tbody>
     </table>`;
@@ -429,6 +453,28 @@ window.Timetable = (function () {
       if (btn) btn.focus({ preventScroll: false });
       refocus = null;
     }
+    // 追加した直後の発表はタイトル欄をすぐ入力できるようにする
+    if (focusEntry) {
+      const inp = body.querySelector(`tr[data-entry="${focusEntry}"] .title-in`);
+      focusEntry = null;
+      if (inp) { inp.focus(); inp.scrollIntoView({ block: "nearest" }); }
+    }
+  }
+
+  /* 表の下の「＋ 発表を追加」。時間が0分の種別は配置できないので選択肢に出さない。 */
+  function renderAddBar() {
+    const sel = $("#tt-add-kind"), btn = $("#tt-add-talk"), note = $("#tt-add-note");
+    if (!sel || !btn) return;
+    const usable = talkTypes.filter(t => typeLen(t) > 0);
+    const prev = sel.value;
+    sel.innerHTML = usable.map((t, i) =>
+      `<option value="${esc(t.id)}">${esc(t.name || `種別${i + 1}`)}（${typeLen(t)}分）</option>`).join("");
+    if (usable.some(t => t.id === prev)) sel.value = prev;
+    sel.hidden = usable.length < 2;
+    btn.disabled = !usable.length;
+    if (note) note.textContent = usable.length
+      ? "空の発表を1件、いちばん下に追加します。"
+      : "発表時間が設定された種別がありません（「設定」タブで指定してください）。";
   }
 
   function renderLegend() {
@@ -454,6 +500,47 @@ window.Timetable = (function () {
     n.innerHTML = `<span style="font-weight:700">${icon}</span><div class="grow">${
       msgs.length === 1 ? esc(msgs[0]) : "<ul>" + msgs.map(m => `<li>${esc(m)}</li>`).join("") + "</ul>"
     }</div>`;
+  }
+
+  /* ---------------- 発表の追加・削除 ---------------- */
+  function addTalk(typeId) {
+    const t = talkTypes.find(x => x.id === typeId && typeLen(x) > 0) || talkTypes.find(x => typeLen(x) > 0);
+    if (!t) {
+      renderNotice(["発表時間が設定された種別がありません。「設定」タブで発表・質疑の時間を指定してください。"], "err");
+      return;
+    }
+    const e = newEntry(t.id);
+    talkList.push(e);
+    focusEntry = e.id;
+
+    if (absolute) {
+      // CSVの時刻をそのまま使っている状態。最後の枠のうしろに続けて置く
+      const base = items.length ? items[items.length - 1].end : (toMin($("#tt-start").value) || 0);
+      items.push({
+        type: "talk", start: base, end: base + typeLen(t), entryId: e.id,
+        typeName: t.name || "発表", colorIdx: talkTypes.indexOf(t), title: "", speaker: ""
+      });
+      render();
+      scheduleSave();
+    } else {
+      generate();
+    }
+  }
+
+  function removeTalk(id) {
+    const i = talkList.findIndex(x => x.id === id);
+    if (i < 0) return;
+    const e = talkList[i];
+    if ((e.title || e.speaker) &&
+        !confirm(`「${e.title || "（無題）"}」を削除します。よろしいですか？`)) return;
+    talkList.splice(i, 1);
+    if (absolute) {
+      items = items.filter(it => it.entryId !== id);
+      render();
+      scheduleSave();
+    } else {
+      generate();
+    }
   }
 
   /* ---------------- reorder ---------------- */
@@ -485,34 +572,23 @@ window.Timetable = (function () {
     return (y - r.top) < r.height / 2;
   }
 
-  /* ---------------- talk types editor ---------------- */
+  /* ---------------- 発表種別の一覧（閲覧のみ。編集は設定タブ） ---------------- */
   function renderTypes() {
     const box = $("#tt-types");
+    if (!box) return;
     if (!talkTypes.length) {
-      box.innerHTML = `<div class="type-empty">発表種別がありません</div>`;
+      box.innerHTML = `<div class="type-empty">発表種別がありません（「設定」タブで追加してください）</div>`;
       return;
     }
+    const n = new Map();
+    for (const e of talkList) n.set(e.typeId, (n.get(e.typeId) || 0) + 1);
+
     box.innerHTML = talkTypes.map((t, i) => `
-      <div class="type-row" data-id="${esc(t.id)}">
-        <div class="head">
-          <span class="swatch" style="background:${typeColor(i).chip}"></span>
-          <input class="name" type="text" data-k="name" placeholder="種別名（一般講演 等）" value="${esc(t.name)}">
-        </div>
-        <button class="kill" data-del="${esc(t.id)}" title="削除">×</button>
-        <div class="nums">
-          <div>
-            <span class="mini">発表(分)</span>
-            <input type="number" data-k="talk" min="0" step="1" value="${t.talk}">
-          </div>
-          <div>
-            <span class="mini">質疑(分)</span>
-            <input type="number" data-k="qa" min="0" step="1" value="${t.qa}">
-          </div>
-          <div>
-            <span class="mini">件数</span>
-            <input type="number" data-k="count" min="0" step="1" placeholder="－" value="${t.count == null ? "" : t.count}">
-          </div>
-        </div>
+      <div class="type-ro" title="${esc(t.name)}">
+        <span class="swatch" style="background:${typeColor(i).chip}"></span>
+        <span class="nm">${esc(t.name || `種別${i + 1}`)}</span>
+        <span class="len">${typeLen(t) > 0 ? `${t.talk}+${t.qa}分` : "時間なし"}</span>
+        <span class="cnt">${n.get(t.id) || 0}件</span>
       </div>`).join("");
   }
 
@@ -719,20 +795,21 @@ window.Timetable = (function () {
     if (allTimed) talks.sort((a, b) => a.start - b.start || a.end - b.end);
 
     // 状態を差し替える（CSVに出てこない種別は残さない。件数だけ0にすると次の読み込みで溜まっていく）
-    talkTypes = talks.length ? defs.filter(t => t.count > 0) : defs;
+    talkTypes = (talks.length ? defs.filter(t => t.count > 0) : defs)
+      .map(t => ({ id: t.id, name: t.name, talk: t.talk, qa: t.qa }));
     talkList = talks.map(t => ({ id: uid(), typeId: t.group.def.id, title: t.title, speaker: t.speaker }));
+    applyMasterTypes(false);   // CSVに無かった種別も「＋ 発表を追加」から選べるように残す
     customSlots = fixed.map(f => ({ id: uid(), start: toStr(f.start), end: toStr(f.end), label: f.label, type: f.type }));
     $("#tt-lunch-on").checked = !!lunch;
     if (lunch) { $("#tt-lunch-start").value = toStr(lunch.start); $("#tt-lunch-end").value = toStr(lunch.end); }
-    renderTypes();
     renderSlots();
 
     if (allTimed) {
       // CSVの時刻をそのまま使う
       const out = talks.map((t, i) => {
-        const ci = talkTypes.indexOf(t.group.def);
+        const ci = talkTypes.findIndex(x => x.id === t.group.def.id);
         return { type: "talk", start: t.start, end: t.end, entryId: talkList[i].id,
-                 typeName: t.group.def.name || `種別${ci + 1}`, colorIdx: ci,
+                 typeName: t.group.def.name || `種別${ci + 1}`, colorIdx: ci < 0 ? 0 : ci,
                  title: t.title, speaker: t.speaker };
       });
       if (lunch) out.push({ type: "lunch", start: lunch.start, end: lunch.end, label: lunch.label });
@@ -786,35 +863,8 @@ window.Timetable = (function () {
       loadFromRegistrations(false);
     });
 
-    // talk type add
-    $("#tt-add-type").addEventListener("click", () => {
-      const last = talkTypes[talkTypes.length - 1];
-      const used = new Set(talkTypes.map(t => t.name));
-      let name = "種別A";
-      for (let i = 0; i < 26 && used.has(name); i++) name = `種別${String.fromCharCode(65 + i + 1)}`;
-      talkTypes.push({
-        id: uid(), name,
-        talk: last ? last.talk : 12,
-        qa: last ? last.qa : 3,
-        count: 1
-      });
-      renderTypes(); generate();
-    });
-    // talk type edit / delete (delegation)
-    $("#tt-types").addEventListener("input", e => {
-      const row = e.target.closest(".type-row"); if (!row) return;
-      const t = talkTypes.find(x => x.id === row.dataset.id); if (!t) return;
-      const k = e.target.dataset.k; if (!k) return;
-      if (k === "name") t.name = e.target.value;
-      else if (k === "count") t.count = e.target.value.trim() === "" ? null : Math.max(0, parseInt(e.target.value, 10) || 0);
-      else t[k] = Math.max(0, parseInt(e.target.value, 10) || 0);
-      generate();
-    });
-    $("#tt-types").addEventListener("click", e => {
-      const del = e.target.dataset.del; if (!del) return;
-      talkTypes = talkTypes.filter(x => x.id !== del);
-      renderTypes(); generate();
-    });
+    // 発表の追加（表の下）
+    $("#tt-add-talk").addEventListener("click", () => addTalk($("#tt-add-kind").value));
 
     // custom slot add
     $("#tt-add-slot").addEventListener("click", () => {
@@ -854,6 +904,8 @@ window.Timetable = (function () {
     let dragId = null;
 
     $("#tt-board").addEventListener("click", e => {
+      const del = e.target.closest(".del-btn");
+      if (del) { removeTalk(del.dataset.delEntry); return; }
       const b = e.target.closest(".mv-btn"); if (!b) return;
       moveEntry(b.dataset.id, parseInt(b.dataset.move, 10));
     });
@@ -914,10 +966,28 @@ window.Timetable = (function () {
     }
   }
 
+  /* 設定タブでの保存・登録の増減を受け取る。発表種別はここが唯一の入り口になるので、
+     マスタが変わっていれば時刻を振り直して表に反映する。 */
   function setSource(source) {
     if (!ctx) return;
     ctx.source = source;
     updateLoadHint();
+    if (!applyMasterTypes(true)) return;
+
+    if (absolute) {
+      // CSVの時刻はそのまま。種別の名称と色だけ設定タブの内容に合わせる
+      const byId = new Map(talkTypes.map((t, i) => [t.id, { name: t.name || `種別${i + 1}`, i }]));
+      for (const it of items) {
+        if (it.type !== "talk") continue;
+        const e = talkList.find(x => x.id === it.entryId);
+        const t = e && byId.get(e.typeId);
+        if (t) { it.typeName = t.name; it.colorIdx = t.i; }
+      }
+      render();
+      scheduleSave();
+    } else {
+      generate();
+    }
   }
 
   return { mount, setSource, loadFromRegistrations, isMounted: () => mounted };

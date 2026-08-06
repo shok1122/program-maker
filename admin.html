@@ -98,10 +98,10 @@
           </div>
 
           <div class="panel">
-            <h2>発表種別</h2>
+            <h2>発表種別<span class="tail">設定タブで編集</span></h2>
             <div class="types" id="tt-types"></div>
-            <button class="btn ghost block small" id="tt-add-type" style="margin-top:11px">＋ 種別を追加</button>
-            <div class="hint">1コマ = 発表 + 質疑。種別ごとに件数を指定すると、上から順に配置されます（空欄にすると現在の件数のまま）。<br>発表の順序は表の行を<b>ドラッグ</b>、または<b>▲▼</b>で入れ替えられます（時刻は自動で振り直されます）。</div>
+            <button class="btn ghost block small" id="tt-goto-set" style="margin-top:11px">設定タブで種別を編集</button>
+            <div class="hint">1コマ = 発表 + 質疑。種別の追加・名称・時間の変更は<b>設定</b>タブで行います。<br>発表の追加は表の下の<b>＋ 発表を追加</b>、削除は行の<b>×</b>から。順序は行を<b>ドラッグ</b>、または<b>▲▼</b>で入れ替えられます（時刻は自動で振り直されます）。</div>
           </div>
 
           <div class="panel">
@@ -161,6 +161,11 @@
               <div class="legend" id="tt-legend"></div>
             </div>
             <div id="tt-board"></div>
+            <div class="board-foot">
+              <button class="btn ghost small" id="tt-add-talk">＋ 発表を追加</button>
+              <select id="tt-add-kind" aria-label="追加する発表の種別"></select>
+              <span class="foot-note" id="tt-add-note"></span>
+            </div>
           </div>
         </div>
 

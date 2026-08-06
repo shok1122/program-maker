@@ -92,6 +92,11 @@
     }
   }
   TABS.forEach((t, i) => $(t.tab).addEventListener("click", () => selectTab(i)));
+  // タイムテーブルタブの「発表種別」は閲覧のみ。編集は設定タブへ送る
+  $("#tt-goto-set").addEventListener("click", () => {
+    selectTab(2);
+    $("#panel-set").scrollIntoView({ block: "start" });
+  });
 
   function syncTimetableSource() {
     if (ttMounted) Timetable.setSource({ registrations: state.registrations, types: state.settings.types });
