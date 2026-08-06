@@ -8,6 +8,26 @@
 **デモ（パスワード不要・データはブラウザ内のみ）**
 https://shok1122.github.io/program-maker/
 
+## とりあえず動かす
+
+```bash
+cp .env.example .env
+vi .env                 # ADMIN_PASSWORD を書き換える（必須）
+vi config/types.json    # 発表種別（名称・発表時間・質疑応答時間）を用意する
+make build && make up   # docker compose build → up -d
+```
+
+- 参加登録ページ … http://localhost:8080/ ← 発表者に配るURL
+- 管理画面 … http://localhost:8080/admin ← `ADMIN_PASSWORD` でログイン
+
+使い方の流れは次の3ステップです。
+
+1. **設定**タブで受付を開始する（イベント名・案内文・参加登録キーもここ）
+2. 発表者に参加登録ページのURLを配り、**登録一覧**タブで申込を確認する
+3. **タイムテーブル**タブで「登録一覧から読み込む」→ 開始時刻・休憩を設定 → 並べ替え → 印刷 / PDF
+
+止めるときは `make down`、データも消すときは `make down && make clean` です。
+
 ## 画面構成
 
 | 画面 | URL | 認証 |
