@@ -178,13 +178,13 @@
             esc(g.t.name || `種別${g.i + 1}`)}</span>
           <div class="summary" style="font-size:11px"><span>発表 <b>${g.list.length}</b> 件</span></div>
         </div>
-        <table>
+        <div class="board-scroll"><table>
           <thead><tr>
             <th class="num">#</th><th>タイトル</th>
             <th style="width:170px">発表者</th><th style="width:210px">所属</th>
           </tr></thead>
           <tbody>${rows}</tbody>
-        </table>
+        </table></div>
       </div>`;
     }).join("");
   }
@@ -199,12 +199,12 @@
 
     const body = day.pending
       ? `<div class="empty-board"><b>準備中</b>この発表日のプログラムはまだ公開されていません。</div>`
-      : `<table>
+      : `<div class="board-scroll"><table>
           <thead><tr>
             <th class="c-no">#</th><th>時刻</th><th>種別</th><th>内容</th>
           </tr></thead>
           <tbody>${rowsHtml(day)}</tbody>
-        </table>`;
+        </table></div>`;
 
     return `<section class="pg-day">
       <div class="board">

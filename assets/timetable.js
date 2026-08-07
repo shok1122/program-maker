@@ -593,12 +593,12 @@ window.Timetable = (function () {
       }
     }
 
-    body.innerHTML = `<table>
+    body.innerHTML = `<div class="board-scroll"><table>
       <thead><tr>
         <th class="c-move"></th><th>時刻</th><th>種別</th><th>内容</th><th style="text-align:right">時間</th><th class="c-del"></th>
       </tr></thead>
       <tbody>${rows}</tbody>
-    </table>`;
+    </table></div>`;
 
     // 並べ替えボタンを連打できるよう、再描画後にフォーカスを戻す
     if (refocus) {
@@ -632,13 +632,13 @@ window.Timetable = (function () {
             esc(g.t.name || `種別${g.i + 1}`)}</span>
           <div class="summary" style="font-size:11px"><span>発表 <b>${g.list.length}</b> 件</span></div>
         </div>
-        <table>
+        <div class="board-scroll"><table>
           <thead><tr>
             <th class="num">#</th><th>タイトル</th>
             <th style="width:170px">発表者</th><th style="width:210px">所属</th>
           </tr></thead>
           <tbody>${rows}</tbody>
-        </table>
+        </table></div>
       </div>`;
     }).join("");
   }

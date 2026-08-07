@@ -59,6 +59,7 @@ header.masthead{
 .panel{
   background:var(--paper);border:1px solid var(--border);border-radius:12px;
   padding:18px 18px 20px;
+  min-width:0;   /* グリッドの子になったとき、中身の最小幅で枠が広がらないように */
 }
 .panel + .panel{margin-top:18px}
 .panel h2{
@@ -77,8 +78,9 @@ header.masthead{
 .field label{display:block;font-size:12px;font-weight:600;color:var(--ink-soft);margin-bottom:5px}
 .field label .req{color:var(--danger);font-weight:700;margin-left:3px}
 .field label .opt{color:var(--ink-faint);font-weight:500;margin-left:5px}
-.row2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
-@media (max-width:560px){ .row2{grid-template-columns:1fr} }
+/* minmax(0,…) にしないと、中身（時刻入力など）の最小幅で列が広がって隣とぶつかる */
+.row2{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:10px}
+@media (max-width:560px){ .row2{grid-template-columns:minmax(0,1fr)} }
 
 input[type=time],input[type=date],input[type=number],input[type=text],input[type=password],select,textarea{
   width:100%;font-family:inherit;font-size:14px;color:var(--ink);
@@ -86,6 +88,17 @@ input[type=time],input[type=date],input[type=number],input[type=text],input[type
   padding:8px 9px;transition:border-color .12s,box-shadow .12s;
 }
 input[type=time],input[type=date],input[type=number]{font-family:var(--mono)}
+/* iOS Safari の日付・時刻入力は固有の内寸を持ち、width:100% を無視して枠から溢れる。
+   最小幅を外し、値の描画も左寄せにして枠の内側へ収める。 */
+input[type=time],input[type=date]{min-width:0;max-width:100%}
+input[type=time]::-webkit-datetime-edit,
+input[type=date]::-webkit-datetime-edit{padding:0}
+input[type=time]::-webkit-date-and-time-value,
+input[type=date]::-webkit-date-and-time-value{text-align:left;margin:0;min-width:0}
+@supports (-webkit-touch-callout:none){   /* iOS のみ。他ブラウザのピッカー表示は残す */
+  /* min-height は、未入力のとき枠が潰れないための保険（他の入力欄と同じ高さ） */
+  input[type=time],input[type=date]{-webkit-appearance:none;appearance:none;min-height:38px}
+}
 textarea{min-height:78px;resize:vertical;line-height:1.6}
 input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
 input:disabled,select:disabled,textarea:disabled{background:var(--panel-2);color:var(--ink-faint);cursor:not-allowed}
@@ -169,7 +182,9 @@ button:disabled{opacity:.55;cursor:not-allowed}
 
 /* ---- generic table ---- */
 .tablewrap{background:var(--paper);border:1px solid var(--border);border-radius:12px;overflow:hidden}
-.tablewrap .scroll{overflow-x:auto}
+.tablewrap .scroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
+/* 狭い画面では列を潰さず横スクロールさせる（潰すとタイトルや発表者が読めなくなる） */
+.tablewrap .scroll > table{min-width:1120px}
 table{width:100%;border-collapse:collapse;font-size:13px}
 thead th{
   font-size:10.5px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;
@@ -233,3 +248,17 @@ tbody tr:hover{background:var(--panel)}
 }
 .saved-tag{font-size:11px;color:var(--ink-faint);font-weight:600}
 .saved-tag.on{color:#047857}
+
+/* ---- 狭い画面 ---- */
+@media (max-width:640px){
+  .wrap{padding:18px 14px 60px}
+  .panel{padding:15px 14px 16px}
+  .masthead{align-items:flex-start;gap:10px;padding-bottom:14px;margin-bottom:18px}
+  .masthead h1{font-size:19px}
+  .masthead .summary{gap:12px}
+  /* タブが折り返して2段になると押しにくいので、1行のまま横スクロールさせる */
+  .tabs{flex-wrap:nowrap;overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+  .tabs::-webkit-scrollbar{display:none}
+  .tab{flex:0 0 auto;padding:9px 11px}
+  .demo-bar{padding:8px 14px}
+}

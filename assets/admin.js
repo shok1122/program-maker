@@ -366,7 +366,7 @@
           </label>
         </div>
         <button class="kill" data-del="${i}" title="削除"${used ? ' data-used="' + used + '"' : ""}>×</button>
-        <div class="nums" style="grid-template-columns:1fr 1fr 1fr">
+        <div class="nums">
           <div>
             <span class="mini">発表(分)</span>
             <input type="number" data-k="talk" min="0" max="600" step="1" value="${t.talk}">
