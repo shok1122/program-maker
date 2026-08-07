@@ -204,7 +204,7 @@ $ make password
 ADMIN_PASSWORD_HASH=scrypt:ln=14,r=8,p=1:iNCcJ1w9SM9DJ3ru0dQzGA:9tvSbxaMd0kwuzUmXAlNsjJd7oORUvyR-eqK4t3Xz5w
 ```
 
-最後の1行を `.env` の `ADMIN_PASSWORD_HASH=` に貼り付けて、起動（起動中なら `docker compose restart`）してください。
+最後の1行を `.env` の `ADMIN_PASSWORD_HASH=` に貼り付けて、起動（起動中なら `make restart`）してください。
 
 - 入力したパスワードは画面に表示されず、ファイルにも残りません。
 - ハッシュは scrypt（ソルト付き・`N=2^14, r=8, p=1`）で、照合は定数時間で行います。
