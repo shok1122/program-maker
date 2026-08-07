@@ -268,8 +268,9 @@
   }
 
   async function boot() {
+    let config;
     try {
-      await TM.init();
+      config = await TM.init();
       data = await TM.getProgram();
     } catch (err) {
       $("#loading").hidden = true;
@@ -278,6 +279,10 @@
     }
     if (TM.isDemo()) $("#demo-bar").classList.add("show");
     $("#loading").hidden = true;
+
+    // 受付中のあいだは申込ページへの導線を出す（申込ページ側の「プログラム」と対）。
+    // プログラムがまだ公開されていない場合も、受付中なら出す。
+    $("#pg-register").hidden = !(config && config.registrationOpen);
 
     if (!data || !data.published) {
       $("#pg-print").hidden = true;
