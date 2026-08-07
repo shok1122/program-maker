@@ -79,7 +79,7 @@
 .type-ro .cnt{color:var(--ink-soft);font-weight:600}
 .type-ro .emph-mark{font-style:normal;font-size:10px;margin-left:4px;vertical-align:1px}
 
-/* ---- 休憩エディタ ---- */
+/* ---- 休憩・特別エディタ（どちらも時間帯の枠なので見た目は共通） ---- */
 .slots{display:flex;flex-direction:column;gap:9px}
 .slot-row{
   display:grid;grid-template-columns:1fr auto;gap:8px;align-items:center;
@@ -146,6 +146,8 @@ tr.row-lunch{background:var(--lunch-bg)}
 tr.row-lunch .chip{background:var(--lunch)}
 tr.row-break{background:var(--break-bg)}
 tr.row-break .chip{background:var(--break)}
+tr.row-special{background:var(--special-bg)}
+tr.row-special .chip{background:var(--special)}
 tr.row-gap{background:repeating-linear-gradient(45deg,#fff,#fff 7px,#f8fafc 7px,#f8fafc 14px)}
 tr.row-gap .chip{background:var(--gap)}
 tr.row-gap td{color:var(--ink-faint)}

@@ -6,7 +6,7 @@
    編集内容は下書きとして自動保存される（サーバー版はサーバー、デモ版は localStorage）。
 
    会期（設定タブ）が複数日ある場合は、発表日ごとに独立した1日ぶんの下書きを持つ。
-   基本設定・休憩・発表の並びはすべて発表日ごとなので、日によって開始時刻や
+   基本設定・休憩・特別・発表の並びはすべて発表日ごとなので、日によって開始時刻や
    休憩のタイミングが違ってもよい。表示していない日の下書きは dayStore に退避し、
    保存するときに全日ぶんをまとめて1つのオブジェクトにする。 */
 
@@ -16,8 +16,10 @@ window.Timetable = (function () {
   // 発表種別 {id, name, talk, qa, emphasis}。設定タブの種別マスタが正で、ここでは編集しない。
   // CSVから取り込んだ種別など、マスタに無いものだけ末尾に残る。
   let talkTypes = [];
-  // 休憩の枠 {id, start, end, label}。発表以外の時間帯はすべてここで扱う。
+  // 休憩の枠 {id, start, end, label}
   let breakSlots = [{ id: uid(), start: "15:00", end: "15:15", label: "休憩" }];
+  // 特別の枠 {id, start, end, label}。開会式・授賞式など発表以外のプログラム。
+  let specialSlots = [];
   // 発表の並び順そのもの。手動で入れ替え可能で、再生成をまたいで保持される
   // {id, typeId, title, speaker, affiliation}
   let talkList = [];
@@ -37,6 +39,23 @@ window.Timetable = (function () {
   let mounted = false;
   let suspendSave = false;
   let saveTimer = null;
+
+  /* 休憩と特別はどちらも「時間帯＋名称」の枠で、違うのは表での見え方と呼び名だけ。
+     エディタ・タイムテーブルの生成・CSVの処理はこの表を回して共通に扱う
+     （キーは items の type と KIND のキーでもある）。 */
+  const SLOT_KINDS = {
+    break: {
+      box: "#tt-slots", add: "#tt-add-slot", len: 15, fallback: "15:00",
+      empty: "休憩はまだありません", placeholder: "名称（休憩・コーヒーブレイク 等）",
+      get: () => breakSlots, set: v => { breakSlots = v; }
+    },
+    special: {
+      box: "#tt-special", add: "#tt-add-special", len: 30, fallback: "10:00",
+      empty: "特別はまだありません", placeholder: "名称（開会式・授賞式 等）",
+      get: () => specialSlots, set: v => { specialSlots = v; }
+    }
+  };
+  const SLOT_TYPES = Object.keys(SLOT_KINDS);
 
   /* ---------------- helpers ---------------- */
   function uid() { return Math.random().toString(36).slice(2, 9); }
@@ -184,6 +203,7 @@ window.Timetable = (function () {
     start: "09:00", lunchOn: true, lunchStart: "12:00", lunchEnd: "13:00", showGap: true,
     talkTypes: [], talkList: [],
     breakSlots: [{ id: uid(), start: "15:00", end: "15:15", label: "休憩" }],
+    specialSlots: [],
     absolute: false, items: null
   });
 
@@ -196,6 +216,7 @@ window.Timetable = (function () {
     $("#tt-lunch-end").value = d.lunchEnd;
     $("#tt-showgap").checked = d.showGap;
     breakSlots = d.breakSlots;
+    specialSlots = d.specialSlots;
     talkList = [];
     items = [];
     absolute = false;
@@ -274,6 +295,7 @@ window.Timetable = (function () {
         id: e.id, typeId: e.typeId, title: e.title, speaker: e.speaker, affiliation: e.affiliation
       })),
       breakSlots: breakSlots.map(c => ({ id: c.id, start: c.start, end: c.end, label: c.label })),
+      specialSlots: specialSlots.map(c => ({ id: c.id, start: c.start, end: c.end, label: c.label })),
       // CSVの時刻をそのまま使っている場合だけ、その時刻を保存して復元する
       absolute: absolute,
       items: absolute ? items.map(it => Object.assign({}, it)) : null
@@ -371,20 +393,26 @@ window.Timetable = (function () {
         };
       });
     applyMasterTypes(true);   // 下書きより設定タブの種別マスタを優先する
-    // customSlots は特別枠があったころの下書き。休憩としてそのまま引き継ぐ
-    const slots = Array.isArray(draft.breakSlots) ? draft.breakSlots
-                : (Array.isArray(draft.customSlots) ? draft.customSlots : []);
-    breakSlots = slots.filter(c => c && typeof c === "object").map(c => ({
-      id: typeof c.id === "string" && c.id ? c.id : uid(),
-      start: String(c.start || ""), end: String(c.end || ""),
-      label: String(c.label == null ? "" : c.label)
-    }));
+    const normSlots = list => (Array.isArray(list) ? list : [])
+      .filter(c => c && typeof c === "object").map(c => ({
+        id: typeof c.id === "string" && c.id ? c.id : uid(),
+        start: String(c.start || ""), end: String(c.end || ""),
+        label: String(c.label == null ? "" : c.label)
+      }));
+    // customSlots は休憩と特別を1つの表で持っていたころの下書き（type で分かれていた）
+    if (!Array.isArray(draft.breakSlots) && Array.isArray(draft.customSlots)) {
+      breakSlots = normSlots(draft.customSlots.filter(c => c && c.type !== "custom"));
+      specialSlots = normSlots(draft.customSlots.filter(c => c && c.type === "custom"));
+    } else {
+      breakSlots = normSlots(draft.breakSlots);
+      specialSlots = normSlots(draft.specialSlots);
+    }
     renderSlots();
 
     if (draft.absolute && Array.isArray(draft.items) && draft.items.length) {
       absolute = true;
-      // 特別枠があったころの下書きの行は休憩として扱う
-      items = draft.items.map(it => it && it.type === "custom" ? Object.assign({}, it, { type: "break" }) : it);
+      // 特別の行は type: "custom" で保存されていたころの下書きがある
+      items = draft.items.map(it => it && it.type === "custom" ? Object.assign({}, it, { type: "special" }) : it);
       applyTypesToItems();
       render();
       renderNotice([], "");
@@ -494,7 +522,7 @@ window.Timetable = (function () {
   }
 
   /* 表示していない発表日の下書きの発表だけを置き換える。
-     その日の開始時刻・ランチ・休憩・空き時間の設定はそのまま残す。 */
+     その日の開始時刻・ランチ・休憩・特別・空き時間の設定はそのまま残す。 */
   function writeDayFromRegs(key) {
     const r = entriesFromRegs(regsForDay(key));
     dayStore[key] = Object.assign(dayStore[key] || blankDayDraft(), {
@@ -552,7 +580,7 @@ window.Timetable = (function () {
       }
       const undated = dayKeys.indexOf("") >= 0 ? regsForDay("").length : 0;
       el.innerHTML = `チェックした <b>${sel.length}</b> つの発表日の発表と手動の並べ替えが、`
-        + `登録一覧の内容で置き換わります（開始時刻・ランチ・休憩はその日の設定のまま残ります）。`
+        + `登録一覧の内容で置き換わります（開始時刻・ランチ・休憩・特別はその日の設定のまま残ります）。`
         + (undated ? `<br>発表日が未定の登録が <b>${undated}</b> 件あります。`
                    + `「登録一覧」タブで発表日を指定してください。` : "");
       return;
@@ -606,10 +634,13 @@ window.Timetable = (function () {
       if (ls != null && le != null && le > ls) fixed.push({ type: "lunch", start: ls, end: le, label: "ランチ" });
       else warnings.push("ランチの時刻が不正です（開始<終了で指定してください）。");
     }
-    breakSlots.forEach(c => {
-      const cs = toMin(c.start), ce = toMin(c.end);
-      if (cs != null && ce != null && ce > cs) fixed.push({ type: "break", start: cs, end: ce, label: c.label || "（無題）" });
-      else if (c.start || c.end || c.label) warnings.push(`休憩「${c.label || "無題"}」の時刻が不正です。`);
+    SLOT_TYPES.forEach(type => {
+      SLOT_KINDS[type].get().forEach(c => {
+        const cs = toMin(c.start), ce = toMin(c.end);
+        if (cs != null && ce != null && ce > cs) fixed.push({ type, start: cs, end: ce, label: c.label || "（無題）" });
+        else if (c.start || c.end || c.label)
+          warnings.push(`${KIND[type].label}「${c.label || "無題"}」の時刻が不正です。`);
+      });
     });
     fixed.sort((a, b) => a.start - b.start || a.end - b.end);
 
@@ -663,9 +694,10 @@ window.Timetable = (function () {
 
   /* ---------------- rendering ---------------- */
   const KIND = {
-    talk:   { label: "発表",   cls: "talk" },
-    lunch:  { label: "ランチ", cls: "lunch" },
-    break:  { label: "休憩",   cls: "break" }
+    talk:    { label: "発表",   cls: "talk" },
+    lunch:   { label: "ランチ", cls: "lunch" },
+    break:   { label: "休憩",   cls: "break" },
+    special: { label: "特別",   cls: "special" }
   };
 
   function render() {
@@ -823,8 +855,9 @@ window.Timetable = (function () {
       seg.push(`<span><i style="background:${typeColor(i).chip}"></i>${esc(name)} ${typeLen(t)}分</span>`);
     });
     const has = k => items.some(i => i.type === k);
-    if (has("lunch")) seg.push(`<span><i style="background:var(--lunch)"></i>ランチ</span>`);
-    if (has("break")) seg.push(`<span><i style="background:var(--break)"></i>休憩</span>`);
+    if (has("lunch"))   seg.push(`<span><i style="background:var(--lunch)"></i>ランチ</span>`);
+    if (has("break"))   seg.push(`<span><i style="background:var(--break)"></i>休憩</span>`);
+    if (has("special")) seg.push(`<span><i style="background:var(--special)"></i>特別</span>`);
     $("#tt-legend").innerHTML = seg.join("");
   }
 
@@ -905,22 +938,55 @@ window.Timetable = (function () {
       </div>`).join("");
   }
 
-  /* ---------------- 休憩エディタ ---------------- */
-  function renderSlots() {
-    const box = $("#tt-slots");
-    if (!breakSlots.length) {
-      box.innerHTML = `<div class="slot-empty">休憩はまだありません</div>`;
+  /* ---------------- 休憩・特別エディタ ---------------- */
+  function renderSlots() { SLOT_TYPES.forEach(renderSlotKind); }
+
+  function renderSlotKind(type) {
+    const k = SLOT_KINDS[type];
+    const box = $(k.box);
+    if (!box) return;
+    const list = k.get();
+    if (!list.length) {
+      box.innerHTML = `<div class="slot-empty">${esc(k.empty)}</div>`;
       return;
     }
-    box.innerHTML = breakSlots.map(c => `
+    box.innerHTML = list.map(c => `
       <div class="slot-row" data-id="${esc(c.id)}">
         <div class="times">
           <input type="time" data-k="start" value="${esc(c.start || "")}">
           <input type="time" data-k="end" value="${esc(c.end || "")}">
         </div>
-        <input class="name" type="text" data-k="label" placeholder="名称（休憩・コーヒーブレイク 等）" value="${esc(c.label)}">
+        <input class="name" type="text" data-k="label" placeholder="${esc(k.placeholder)}" value="${esc(c.label)}">
         <button class="kill" data-del="${esc(c.id)}" title="削除">×</button>
       </div>`).join("");
+  }
+
+  /* 1種類ぶんのエディタに追加・編集・削除をつなぐ（bind から1回だけ呼ばれる）。 */
+  function bindSlotEditor(type) {
+    const k = SLOT_KINDS[type];
+    const box = $(k.box), add = $(k.add);
+    if (!box || !add) return;
+
+    // 追加する枠は、最後の枠の終わり（無ければ開始時刻）から続けて置く
+    add.addEventListener("click", () => {
+      const list = k.get();
+      const last = list[list.length - 1];
+      const base = last ? toMin(last.end) : toMin($("#tt-start").value);
+      const from = base != null ? base : toMin(k.fallback);
+      list.push({ id: uid(), start: toStr(from), end: toStr(from + k.len), label: KIND[type].label });
+      renderSlotKind(type); generate();
+    });
+    box.addEventListener("input", e => {
+      const row = e.target.closest(".slot-row"); if (!row) return;
+      const c = k.get().find(x => x.id === row.dataset.id); if (!c) return;
+      const f = e.target.dataset.k; if (f) c[f] = e.target.value;
+      generate();
+    });
+    box.addEventListener("click", e => {
+      const del = e.target.dataset.del; if (!del) return;
+      k.set(k.get().filter(x => x.id !== del));
+      renderSlotKind(type); generate();
+    });
   }
 
   /* ---------------- CSV ---------------- */
@@ -968,8 +1034,7 @@ window.Timetable = (function () {
     return rows.filter(r => r.some(c => c.trim() !== ""));
   }
 
-  // 「特別」は特別枠があったころのエクスポート。休憩として読み込む
-  const KIND_FROM = { "発表": "talk", "ランチ": "lunch", "昼食": "lunch", "休憩": "break", "特別": "break" };
+  const KIND_FROM = { "発表": "talk", "ランチ": "lunch", "昼食": "lunch", "休憩": "break", "特別": "special" };
 
   /* 見出し行から列の位置を推定する（見出しが無ければ null）。
      時刻の列が無いCSV（発表種別だけを並べたもの）も読めるようにするため、
@@ -1024,7 +1089,7 @@ window.Timetable = (function () {
     }
 
     const talks = [];    // 発表（CSVの並び順）
-    const fixed = [];    // 時刻付きの休憩
+    const fixed = [];    // 時刻付きの休憩・特別
     const dropped = [];  // 時刻が無く配置できなかった枠
     let lunch = null, untimed = 0;
 
@@ -1048,7 +1113,7 @@ window.Timetable = (function () {
       } else if (type === "lunch") {
         lunch = { start: s, end: e, label: title || "ランチ" };
       } else {
-        fixed.push({ type: "break", start: s, end: e, label: title || "休憩" });
+        fixed.push({ type, start: s, end: e, label: title || KIND[type].label });
       }
     }
 
@@ -1113,7 +1178,9 @@ window.Timetable = (function () {
                speaker: who.speaker, affiliation: who.affiliation };
     });
     applyMasterTypes(false);   // CSVに無かった種別も種別マスタのぶんは残す
-    breakSlots = fixed.map(f => ({ id: uid(), start: toStr(f.start), end: toStr(f.end), label: f.label }));
+    SLOT_TYPES.forEach(type => SLOT_KINDS[type].set(
+      fixed.filter(f => f.type === type)
+        .map(f => ({ id: uid(), start: toStr(f.start), end: toStr(f.end), label: f.label }))));
     $("#tt-lunch-on").checked = !!lunch;
     if (lunch) { $("#tt-lunch-start").value = toStr(lunch.start); $("#tt-lunch-end").value = toStr(lunch.end); }
     renderSlots();
@@ -1203,27 +1270,8 @@ window.Timetable = (function () {
       if (b) switchDay(b.dataset.day);
     });
 
-    // 休憩の追加
-    $("#tt-add-slot").addEventListener("click", () => {
-      const last = breakSlots[breakSlots.length - 1];
-      const base = last ? toMin(last.end) : toMin($("#tt-start").value);
-      const s = base != null ? toStr(base) : "15:00";
-      const e = base != null ? toStr(base + 15) : "15:15";
-      breakSlots.push({ id: uid(), start: s, end: e, label: "休憩" });
-      renderSlots(); generate();
-    });
-    // 休憩の編集・削除（委譲）
-    $("#tt-slots").addEventListener("input", e => {
-      const row = e.target.closest(".slot-row"); if (!row) return;
-      const c = breakSlots.find(x => x.id === row.dataset.id); if (!c) return;
-      const k = e.target.dataset.k; if (k) c[k] = e.target.value;
-      generate();
-    });
-    $("#tt-slots").addEventListener("click", e => {
-      const del = e.target.dataset.del; if (!del) return;
-      breakSlots = breakSlots.filter(x => x.id !== del);
-      renderSlots(); generate();
-    });
+    // 休憩・特別の追加・編集・削除
+    SLOT_TYPES.forEach(bindSlotEditor);
 
     // inline talk editing (delegation) — no regenerate, just persist
     $("#tt-board").addEventListener("input", e => {

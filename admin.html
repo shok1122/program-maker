@@ -100,7 +100,7 @@
               <input type="time" id="tt-start" value="09:00">
             </div>
             <div class="hint">開始時刻から順に発表コマを並べ、固定枠の前で区切ります。終了時刻は発表の件数と固定枠から決まります。
-              <br>会期が複数日ある場合、この基本設定と休憩は<b>発表日ごと</b>に保存されます。</div>
+              <br>会期が複数日ある場合、この基本設定と休憩・特別は<b>発表日ごと</b>に保存されます。</div>
 
             <hr class="panel-sep">
 
@@ -123,14 +123,21 @@
             <label class="inline-check">
               <input type="checkbox" id="tt-showgap" checked> 空き時間を表示
             </label>
-            <div class="hint">発表とランチ・休憩のあいだにできた空き時間を、表に行として出します。</div>
+            <div class="hint">発表とランチ・休憩・特別のあいだにできた空き時間を、表に行として出します。</div>
           </div>
 
           <div class="panel">
             <h2>休憩<span class="tail day-tag"></span></h2>
             <div class="slots" id="tt-slots"></div>
             <button class="btn ghost block small" id="tt-add-slot" style="margin-top:11px">＋ 休憩を追加</button>
-            <div class="hint">発表のあいだに入れる休憩の時間帯を、いくつでも定義できます。<br>基調講演・授賞式など発表以外のプログラムは、<b>設定</b>タブで発表種別として定義してください。</div>
+            <div class="hint">発表のあいだに入れる休憩の時間帯を、いくつでも定義できます。</div>
+          </div>
+
+          <div class="panel">
+            <h2>特別<span class="tail day-tag"></span></h2>
+            <div class="slots" id="tt-special"></div>
+            <button class="btn ghost block small" id="tt-add-special" style="margin-top:11px">＋ 特別を追加</button>
+            <div class="hint">開会式・授賞式・見学会など、発表以外のプログラムの時間帯を、休憩と同じようにいくつでも定義できます。<br>発表者・タイトルを表に出したい基調講演などは、<b>設定</b>タブで発表種別として定義してください。</div>
           </div>
 
           <div class="panel">

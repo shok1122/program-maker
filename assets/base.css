@@ -14,6 +14,7 @@
   --accent-soft:#eef2ff;
   --lunch:#f59e0b;   --lunch-bg:#fffbeb;
   --break:#10b981;   --break-bg:#ecfdf5;
+  --special:#6366f1; --special-bg:#eef2ff;
   --gap:#cbd5e1;
   --danger:#dc2626;
   --mono:ui-monospace,"SF Mono","SFMono-Regular",Menlo,Consolas,"Liberation Mono",monospace;
@@ -132,6 +133,7 @@ button:disabled{opacity:.55;cursor:not-allowed}
 .badge.talk{background:var(--panel-2);color:var(--ink-soft)}
 .badge.lunch{background:var(--lunch-bg);color:#b45309}
 .badge.break{background:var(--break-bg);color:#047857}
+.badge.special{background:var(--special-bg);color:#4338ca}
 .badge.on{background:var(--break-bg);color:#047857}
 .badge.off{background:#fef2f2;color:#991b1b}
 
