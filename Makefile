@@ -71,6 +71,10 @@ logs-https:
 down:
 	docker compose --profile https down
 
+.PHONY: restart
+restart:
+	docker compose restart
+
 .PHONY: clean
 clean:
 	docker volume rm program-maker_program-data
