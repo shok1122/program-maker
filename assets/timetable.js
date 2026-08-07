@@ -279,6 +279,9 @@ window.Timetable = (function () {
 
   function scheduleSave() {
     if (suspendSave || !ctx || !ctx.saveDraft) return;
+    // 閲覧モード（編集権を持っていない）では保存しない。発表日の切り替えだけはできるので、
+    // 「保存しました」と誤解させないよう表示も消す。
+    if (ctx.canSave && !ctx.canSave()) { clearTimeout(saveTimer); setSaved("", false); return; }
     setSaved("保存中…", false);
     clearTimeout(saveTimer);
     saveTimer = setTimeout(async () => {
@@ -1134,7 +1137,7 @@ window.Timetable = (function () {
   }
 
   /* ---------------- public ---------------- */
-  /* context: {source:{registrations,types}, draft, saveDraft(draft)->Promise} */
+  /* context: {source:{registrations,types}, draft, saveDraft(draft)->Promise, canSave()->bool} */
   function mount(context) {
     ctx = context;
     if (!mounted) { bind(); mounted = true; }

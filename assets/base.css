@@ -150,6 +150,27 @@ button:disabled{opacity:.55;cursor:not-allowed}
 .badge.on{background:var(--break-bg);color:#047857}
 .badge.off{background:#fef2f2;color:#991b1b}
 
+/* ---- 編集ロック ----
+   管理画面を同時に編集できるのは1人だけ。いまどちらの状態かがひと目で分かるように、
+   編集中は緑、他の人が編集中は黄、閲覧モードは無彩色にする。 */
+.editbar{
+  display:none;align-items:center;gap:10px;flex-wrap:wrap;
+  margin-bottom:16px;padding:9px 14px;border-radius:9px;font-size:13px;
+  background:var(--panel);border:1px solid var(--border-strong);color:var(--ink-soft);
+}
+.editbar.show{display:flex}
+.editbar .grow{flex:1 1 auto}
+.editbar .state{min-width:0}
+.editbar.mine{background:var(--break-bg);border-color:#a7f3d0;color:#065f46}
+.editbar.busy{background:#fffbeb;border-color:#fde68a;color:#92400e}
+
+/* 閲覧モード。操作は JS 側でも止めているので、ここでは見た目だけを落とす。 */
+body.ro .tabpanel{opacity:.85}
+body.ro .tabpanel input:disabled,
+body.ro .tabpanel select:disabled,
+body.ro .tabpanel textarea:disabled{background:var(--panel-2);color:var(--ink-soft)}
+body.ro .tabpanel [draggable]{cursor:default}
+
 /* ---- demo banner ---- */
 .demo-bar{
   background:#1e293b;color:#e2e8f0;font-size:12px;

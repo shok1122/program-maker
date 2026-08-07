@@ -153,12 +153,17 @@ window.TM = (function () {
 
   /* ---------------- server 実装 ---------------- */
 
-  async function http(path, method, body) {
-    const opts = {
+  /* 編集ロックはログイン単位ではなく画面単位で持つので、開いている画面を識別する値を
+     すべてのリクエストに付ける。開き直すと変わるので、同じログインの別タブとも区別できる。 */
+  const PAGE_ID = uid();
+
+  /* extra はページを離れるときの解放（keepalive）のような fetch のオプション。 */
+  async function http(path, method, body, extra) {
+    const opts = Object.assign({
       method: method || "GET",
       credentials: "same-origin",
-      headers: { "Accept": "application/json", "X-TM-Request": "1" }
-    };
+      headers: { "Accept": "application/json", "X-TM-Request": "1", "X-TM-Page": PAGE_ID }
+    }, extra || {});
     if (body !== undefined) {
       opts.headers["Content-Type"] = "application/json";
       opts.body = JSON.stringify(body);
@@ -186,6 +191,12 @@ window.TM = (function () {
     login: password => http("api/admin/login", "POST", { password }),
     logout: () => http("api/admin/logout", "POST"),
     getData: () => http("api/admin/data"),
+    /* 編集ロック。acquireLock は取得と心拍を兼ねる（force で他の人から引き継ぐ）。
+       どの画面のものかは X-TM-Page（上の PAGE_ID）で判別する。 */
+    getLock: () => http("api/admin/lock"),
+    acquireLock: (name, force) =>
+      http("api/admin/lock", "POST", { name: name || "", force: !!force }),
+    releaseLock: extra => http("api/admin/lock", "DELETE", undefined, extra),
     saveSettings: settings => http("api/admin/settings", "PUT", { settings }),
     addRegistration: input => http("api/admin/registrations", "POST", input),
     updateRegistration: (id, input) =>
@@ -275,6 +286,21 @@ window.TM = (function () {
   }
   const later = value => new Promise(r => setTimeout(() => r(value), 80));   // 通信っぽい間
 
+  /* 編集ロック。デモ版はこのブラウザ1つしか使わないので、同じ形を返すだけで足りる。 */
+  const DEMO_LEASE_MS = 120e3;
+  let demoLock = null;
+  function demoLockView() {
+    if (demoLock && demoLock.expiresAt <= Date.now()) demoLock = null;
+    return {
+      held: !!demoLock, mine: !!demoLock, sameSession: false,
+      pageId: demoLock ? PAGE_ID : "",
+      name: demoLock ? demoLock.name : "",
+      since: demoLock ? new Date(demoLock.since).toISOString() : "",
+      expiresAt: demoLock ? new Date(demoLock.expiresAt).toISOString() : "",
+      leaseMs: DEMO_LEASE_MS
+    };
+  }
+
   const demoApi = {
     getConfig: () => later(publicConfig(demoRead().settings, "demo")),
     getProgram: () => later(programPayload(demoRead())),
@@ -291,8 +317,23 @@ window.TM = (function () {
     login: () => later({ ok: true }),
     logout: () => later({ ok: true }),
     getData: () => later((d => ({
-      settings: d.settings, registrations: d.registrations, timetable: d.timetable
+      settings: d.settings, registrations: d.registrations, timetable: d.timetable,
+      lock: demoLockView()
     }))(demoRead())),
+    getLock: () => later(demoLockView()),
+    acquireLock: name => later((() => {
+      const now = Date.now();
+      demoLock = {
+        name: oneLine(name, 40) || (demoLock ? demoLock.name : ""),
+        since: demoLock ? demoLock.since : now,
+        expiresAt: now + DEMO_LEASE_MS
+      };
+      return Object.assign({ ok: true, tookOver: false }, demoLockView());
+    })()),
+    releaseLock: () => later((() => {
+      demoLock = null;
+      return Object.assign({ ok: true }, demoLockView());
+    })()),
     saveSettings: settings => later(demoMutate(data => {
       const s = data.settings;
       if ("eventName" in settings) s.eventName = oneLine(settings.eventName, LIMITS.eventName) || "研究発表会";
@@ -398,11 +439,13 @@ window.TM = (function () {
   const api = {
     init,
     isoDate, eventDates, dateLabel,
+    pageId: () => PAGE_ID,
     mode: () => MODE,
     isDemo: () => MODE === "demo",
     resetDemo: () => (MODE === "demo" ? demoApi.resetDemo() : Promise.resolve({ ok: false }))
   };
   for (const name of ["getConfig", "getProgram", "register", "session", "login", "logout", "getData",
+                      "getLock", "acquireLock", "releaseLock",
                       "saveSettings", "addRegistration", "updateRegistration",
                       "deleteRegistration", "saveTimetable"]) {
     api[name] = function () {

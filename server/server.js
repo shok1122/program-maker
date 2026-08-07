@@ -15,6 +15,7 @@
      TYPES_FILE        発表種別の定義ファイル             既定 ./config/types.json
      COOKIE_SECURE     1 なら Secure 付きの Cookie を発行（HTTPS 経由で公開する場合）
      SESSION_HOURS     ログインの有効時間（時間）        既定 12
+     EDIT_LEASE_SECONDS  編集ロックが心拍なしで保たれる秒数  既定 120
      TRUST_PROXY       1 なら X-Forwarded-For を接続元として扱う（リバースプロキシ配下） */
 
 const http = require("node:http");
@@ -111,6 +112,74 @@ function cookieHeader(token, maxAgeSec) {
   return bits.join("; ");
 }
 const isAuthed = req => validSession(parseCookies(req.headers.cookie)[COOKIE_NAME]);
+
+/* ---------------- edit lock ----------------
+   管理画面は同時に1人しか編集できない。更新系のAPIはすべてこのロックを要求するので、
+   2つのタブや2人の管理者が同じ下書きを上書きし合うことがない。
+
+   ロックはメモリだけに持つ（再起動で消えるのが正しい）。編集中の画面が心拍を送り、
+   EDIT_LEASE_MS のあいだ途切れたら自動で解放する ── ブラウザを閉じたまま戻ってこない
+   人がいても、待てば必ず編集できる。急ぐ場合は force で引き継げる。 */
+const EDIT_LEASE_SECONDS = +(process.env.EDIT_LEASE_SECONDS || 120);
+const EDIT_LEASE_MS =
+  Math.max(30, Number.isFinite(EDIT_LEASE_SECONDS) ? EDIT_LEASE_SECONDS : 120) * 1000;
+const LOCK_NAME_MAX = 40;
+
+let editLock = null;      // {token, pageId, name, since, expiresAt}
+
+/* ロックはログイン単位ではなく「開いている画面」単位で持つ。同じパスワードで入った
+   2つのタブが、どちらも自分が編集中だと思い込んで下書きを上書きし合わないようにするため。
+   画面を識別するのは X-TM-Page（画面を開くたびに変わる値。assets/api.js が付ける）。 */
+const pageOf = req => String(req.headers["x-tm-page"] || "");
+
+/* 期限切れ・ログアウト済みのロックはここで捨てる。 */
+function currentLock() {
+  if (editLock && (editLock.expiresAt <= Date.now() || !validSession(editLock.token)))
+    editLock = null;
+  return editLock;
+}
+const lockHolder = l => (l && l.name ? l.name : "他の管理者");
+
+function holdsLock(req) {
+  const l = currentLock();
+  if (!l || l.token !== parseCookies(req.headers.cookie)[COOKIE_NAME]) return false;
+  return !l.pageId || l.pageId === pageOf(req);   // pageId 無し＝ブラウザ以外のクライアント
+}
+
+function lockView(req) {
+  const l = currentLock();
+  const mine = holdsLock(req);
+  const same = !!(l && l.token === parseCookies(req.headers.cookie)[COOKIE_NAME]);
+  return {
+    held: !!l,
+    mine,
+    // 同じログインの別タブが持っている状態。画面の案内を変えるために返す
+    sameSession: !mine && same,
+    /* 持ち主の画面ID。同じログインのときだけ返す。再読み込みした画面が
+       「直前の自分が持っていたロック」だと確かめて引き継ぐために使う。 */
+    pageId: same ? l.pageId : "",
+    name: l ? l.name : "",
+    since: l ? new Date(l.since).toISOString() : "",
+    expiresAt: l ? new Date(l.expiresAt).toISOString() : "",
+    leaseMs: EDIT_LEASE_MS
+  };
+}
+
+/* 更新系の管理APIの入口。ロックを持っていなければ 423 を返して true。 */
+function lockDenied(req, res) {
+  if (holdsLock(req)) return false;
+  const l = currentLock();
+  const same = l && l.token === parseCookies(req.headers.cookie)[COOKIE_NAME];
+  sendJson(res, 423, {
+    error: !l
+      ? "閲覧モードです。「編集を開始」を押してからやり直してください。"
+      : same
+        ? "同じログインの別のタブ（または別の端末）が編集中です。"
+        : `${lockHolder(l)}が編集中です。編集権を取得してからやり直してください。`,
+    lock: lockView(req)
+  });
+  return true;
+}
 
 /* ---------------- login throttle ---------------- */
 const attempts = new Map();   // ip -> {count, resetAt}
@@ -362,6 +431,7 @@ async function handleApi(req, res, url) {
 
   if (sub === "logout" && m === "POST") {
     const token = parseCookies(req.headers.cookie)[COOKIE_NAME];
+    // セッションを消せば currentLock() がそのロックを捨てるので、編集権も一緒に手放される
     if (token) sessions.delete(token);
     return sendJson(res, 200, { ok: true }, { "Set-Cookie": cookieHeader("", 0) });
   }
@@ -370,16 +440,57 @@ async function handleApi(req, res, url) {
   if (m !== "GET" && m !== "HEAD" && crossSite(req))
     return sendJson(res, 403, { error: "リクエストの発行元を確認できませんでした。" });
 
+  /* 編集ロック。GET=状態、POST=取得と心拍（force で引き継ぎ）、DELETE=解放。 */
+  if (sub === "lock" && seg.length === 2) {
+    if (m === "GET" || m === "HEAD") return sendJson(res, 200, lockView(req));
+    const token = parseCookies(req.headers.cookie)[COOKIE_NAME];
+
+    if (m === "POST") {
+      const body = await readJson(req);
+      const held = currentLock();
+      const mine = holdsLock(req);
+      if (held && !mine && !body.force)
+        return sendJson(res, 409, {
+          error: held.token === token
+            ? "同じログインの別のタブ（または別の端末）が編集中です。"
+            : `${lockHolder(held)}が編集中です。`,
+          lock: lockView(req)
+        });
+      const name = str(body.name, LOCK_NAME_MAX);
+      const now = Date.now();
+      editLock = {
+        token,
+        pageId: pageOf(req),
+        // 心拍では名前を送り直さなくてよいように、自分のロックなら前の名前を残す
+        name: mine && !name ? held.name : name,
+        since: mine ? held.since : now,
+        expiresAt: now + EDIT_LEASE_MS
+      };
+      return sendJson(res, 200,
+        Object.assign({ ok: true, tookOver: !!(held && !mine) }, lockView(req)));
+    }
+
+    if (m === "DELETE") {
+      /* 解放できるのはロックを取った画面だけ。再読み込みで「離れる直前の画面が送った解放」が
+         「読み込み直した画面が取り直したロック」より後に届いても、取り消されない。 */
+      if (holdsLock(req)) editLock = null;
+      return sendJson(res, 200, Object.assign({ ok: true }, lockView(req)));
+    }
+    return sendJson(res, 405, { error: "method not allowed" });
+  }
+
   if (sub === "data" && (m === "GET" || m === "HEAD")) {
     const d = store.data;
     return sendJson(res, 200, {
       settings: d.settings,
       registrations: d.registrations,
-      timetable: d.timetable
+      timetable: d.timetable,
+      lock: lockView(req)
     });
   }
 
   if (sub === "settings" && m === "PUT") {
+    if (lockDenied(req, res)) return;
     const body = await readJson(req);
     const result = await store.mutate(data => {
       const s = data.settings;
@@ -437,6 +548,7 @@ async function handleApi(req, res, url) {
   }
 
   if (sub === "registrations" && seg.length === 2 && m === "POST") {
+    if (lockDenied(req, res)) return;
     const body = await readJson(req);
     const rec = await store.mutate(data => {
       const r = buildRegistration(data.settings, body, null);
@@ -448,6 +560,7 @@ async function handleApi(req, res, url) {
 
   if (sub === "registrations" && seg.length === 3) {
     const id = decodeURIComponent(seg[2]);
+    if ((m === "PUT" || m === "DELETE") && lockDenied(req, res)) return;
     if (m === "PUT") {
       const body = await readJson(req);
       const rec = await store.mutate(data => {
@@ -470,6 +583,7 @@ async function handleApi(req, res, url) {
   }
 
   if (sub === "timetable" && m === "PUT") {
+    if (lockDenied(req, res)) return;
     const body = await readJson(req);
     await store.mutate(data => {
       data.timetable = body.timetable && typeof body.timetable === "object" ? body.timetable : null;

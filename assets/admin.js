@@ -20,7 +20,11 @@
     registrations: [],
     timetable: null,
     editingId: null,   // 編集中の登録ID
-    adding: false      // 新規追加の行を出しているか
+    adding: false,     // 新規追加の行を出しているか
+    /* 編集ロックの状態（サーバーの /api/admin/lock が正）。
+       mine が false のあいだ、この画面は閲覧モードで一切変更できない。 */
+    lock: { held: false, mine: false, sameSession: false, pageId: "",
+            name: "", since: "", expiresAt: "", leaseMs: 120000 }
   };
   let ttMounted = false;
 
@@ -43,6 +47,207 @@
     }
     return false;
   }
+
+  /* ---------------- 編集ロック ----------------
+     管理画面は同時に1人しか編集できない。編集権を持っていない画面は閲覧モードで、
+     #shell の中の操作（data-ro="1" を除く）をすべて止める。実際の防御はサーバー側
+     （更新系APIが 423 を返す）にあり、ここはその手前で操作させないための層。 */
+
+  const NAME_KEY = "tm-admin-name";      // 名前は次回のために覚えておく
+  const FLASH_KEY = "tm-admin-flash";    // 再読み込みをまたいで出すメッセージ
+  /* このタブが編集中だったときの画面ID。再読み込み（編集開始・F5）で戻ってきたときに、
+     空いていれば取り直し、まだ直前の自分が持っていれば引き継ぐために使う。
+     sessionStorage なのでタブを閉じれば消え、閉じた場合は取り直さない。 */
+  const EDIT_KEY = "tm-admin-editing";
+  const editing = () => !!state.lock.mine;
+  let tick = null;                       // 心拍（編集中）／空き待ち（閲覧中）のタイマー
+  let losing = false;                    // 編集権を失ったあとの多重処理を防ぐ
+
+  function store(key, value) {
+    try {
+      if (value === undefined) return sessionStorage.getItem(key) || "";
+      value === null ? sessionStorage.removeItem(key) : sessionStorage.setItem(key, value);
+    } catch (_) { /* 無効でも動作に影響しない */ }
+    return "";
+  }
+  function savedName() {
+    try { return localStorage.getItem(NAME_KEY) || ""; } catch (_) { return ""; }
+  }
+  function rememberName(name) {
+    try { localStorage.setItem(NAME_KEY, name); } catch (_) { /* 無視 */ }
+  }
+
+  function setLock(view) {
+    if (view && typeof view === "object")
+      state.lock = {
+        held: !!view.held, mine: !!view.mine, sameSession: !!view.sameSession,
+        pageId: String(view.pageId || ""), name: String(view.name || ""),
+        since: String(view.since || ""), expiresAt: String(view.expiresAt || ""),
+        leaseMs: +view.leaseMs > 0 ? +view.leaseMs : state.lock.leaseMs
+      };
+    // 再読み込みで戻ってきたときに引き継げるよう、持っているあいだは印を残す
+    if (state.lock.mine) store(EDIT_KEY, TM.pageId());
+    renderEditBar();
+    applyEditable();
+    return state.lock;
+  }
+
+  function renderEditBar() {
+    const bar = $("#editbar");
+    const l = state.lock;
+    bar.hidden = false;
+    bar.className = "editbar show" + (l.mine ? " mine" : l.held ? " busy" : "");
+    const since = l.since ? fmtStamp(l.since) : "";
+    $("#eb-state").innerHTML = l.mine
+      ? `<b>編集中</b>：あなた${l.name ? "（" + esc(l.name) + "）" : ""}
+         ── ほかの管理者は閲覧のみになります。終わったら「編集を終了」を押してください。`
+      : l.held
+        ? (l.sameSession
+            ? `<b>別のタブ（または別の端末）</b>が編集中です${since ? `（${esc(since)}から）` : ""}
+               ── 同じログインでも、編集できるのは1つの画面だけです。`
+            : `<b>${esc(l.name || "他の管理者")}</b>が編集中です${since ? `（${esc(since)}から）` : ""}。
+               いまは閲覧のみです。`)
+        : `<b>閲覧モード</b>です。変更するには「編集を開始」を押してください
+           ── 同時に編集できるのは1人だけです。`;
+    $("#eb-start").hidden = l.held;
+    $("#eb-take").hidden = !(l.held && !l.mine);
+    $("#eb-end").hidden = !l.mine;
+  }
+
+  /* 閲覧モードでは #shell の中のフォーム部品をすべて無効にする。 */
+  function applyEditable() {
+    const on = editing();
+    document.body.classList.toggle("ro", !on);
+    document.querySelectorAll("#shell button,#shell input,#shell select,#shell textarea")
+      .forEach(el => { if (!el.closest("[data-ro='1']")) el.disabled = !on; });
+  }
+
+  /* タイムテーブルタブなどは自前で描き直すので、増えた部品にも無効化を掛け直す。 */
+  let sweeping = false;
+  new MutationObserver(() => {
+    if (sweeping || editing()) return;
+    sweeping = true;
+    requestAnimationFrame(() => { sweeping = false; applyEditable(); });
+  }).observe($("#shell"), { childList: true, subtree: true });
+
+  /* 描き直しの隙をつかれないよう、実際のハンドラより先に捕まえて止める。 */
+  for (const type of ["click", "change", "input", "submit", "dragstart", "drop"])
+    document.addEventListener(type, e => {
+      if (editing()) return;
+      const t = e.target;
+      if (!t || !t.closest) return;
+      if (!t.closest("#shell")) return;          // 編集バー・ヘッダは閲覧モードでも使える
+      if (t.closest("[data-ro='1']")) return;
+      e.preventDefault();
+      e.stopPropagation();
+    }, true);
+
+  function scheduleTick() {
+    clearTimeout(tick);
+    // 編集中は期限の1/3ごとに心拍を送る。閲覧中は空くのを待つだけなので10秒おき。
+    const ms = editing() ? Math.max(15000, Math.round(state.lock.leaseMs / 3)) : 10000;
+    tick = setTimeout(runTick, ms);
+  }
+  async function runTick() {
+    try {
+      // 編集中の POST は心拍を兼ねる。期限切れで空いていればそのまま取り直す。
+      setLock(editing() ? await TM.acquireLock(state.lock.name, false) : await TM.getLock());
+    } catch (err) {
+      if (handleAuthError(err)) return;
+      if (err.status === 409 || err.status === 423) return lostLock(err.message);
+      /* 通信の一時的な失敗。次の周期で取り直す */
+    }
+    scheduleTick();
+  }
+
+  /* 編集権を失った（引き継がれた／期限切れのあいだに取られた）。
+     手元の下書きはサーバーと食い違っている可能性があるので、読み込み直す。 */
+  function lostLock(message) {
+    if (losing) return;
+    losing = true;
+    clearTimeout(tick);
+    store(EDIT_KEY, null);          // 取り直さない（自分のものではなくなった）
+    state.lock.mine = false;
+    state.lock.held = true;
+    renderEditBar();
+    applyEditable();
+    notice((message || "編集権が他の管理者に引き継がれました。")
+      + " 閲覧モードに戻ります。", "warn");
+    setTimeout(() => location.reload(), 2000);
+  }
+
+  /* 更新系APIが編集権不足で弾かれた場合。呼び出し側は true なら後始末をしない。 */
+  function handleLockError(err) {
+    if (!err || err.status !== 423) return false;
+    lostLock(err.message);
+    return true;
+  }
+
+  function askName() {
+    const v = prompt(
+      "お名前を入力してください。\n他の管理者に「◯◯が編集中です」と表示されます（空欄でも構いません）。",
+      savedName());
+    return v === null ? null : String(v).replace(/\s+/g, " ").trim().slice(0, 40);
+  }
+
+  async function startEditing(force) {
+    const l = state.lock;
+    if (force && !confirm(
+      `${l.sameSession ? "別のタブ（または別の端末）" : (l.name || "他の管理者")}が編集中です`
+      + `${l.since ? `（${fmtStamp(l.since)}から）` : ""}。\n\n`
+      + "編集権を引き継ぐと、そちらの画面は閲覧モードに切り替わり、\n"
+      + "まだ保存していない変更は失われることがあります。\n\n引き継ぎますか？")) return;
+
+    const name = askName();
+    if (name === null) return;
+    const btns = [$("#eb-start"), $("#eb-take")];
+    btns.forEach(b => b.disabled = true);
+    try {
+      const res = await TM.acquireLock(name, force);
+      rememberName(name);
+      // 待っているあいだにサーバー側が変わっているので、手元を捨てて読み込み直す。
+      // 特にタイムテーブルの下書きは、古い写しのまま編集すると相手の変更を消してしまう。
+      store(EDIT_KEY, TM.pageId());
+      store(FLASH_KEY, res.tookOver ? "編集権を引き継ぎました。" : "編集を開始しました。");
+      location.reload();
+    } catch (err) {
+      btns.forEach(b => b.disabled = false);
+      if (handleAuthError(err)) return;
+      if (err.status === 409) {
+        try { setLock(await TM.getLock()); } catch (_) { /* 表示はそのまま */ }
+        notice(err.message + " 引き継ぐ場合は「編集を引き継ぐ」を押してください。", "warn");
+        return;
+      }
+      notice(err.message || "編集を開始できませんでした。", "err");
+    }
+  }
+
+  async function endEditing() {
+    clearTimeout(tick);
+    store(EDIT_KEY, null);
+    try {
+      setLock(await TM.releaseLock());
+      notice("編集を終了しました。ほかの管理者が編集できます。", "ok");
+    } catch (err) {
+      if (handleAuthError(err)) return;
+      notice(err.message || "編集を終了できませんでした。", "err");
+    }
+    scheduleTick();
+  }
+
+  $("#eb-start").addEventListener("click", () => startEditing(false));
+  $("#eb-take").addEventListener("click", () => startEditing(true));
+  $("#eb-end").addEventListener("click", endEditing);
+
+  // タブを閉じた・別ページへ移った場合は、期限切れを待たずにその場で手放す
+  // （再読み込みの場合は EDIT_KEY が残るので、戻ってきたときに取り直す）
+  window.addEventListener("pagehide", () => {
+    if (!editing() || TM.isDemo()) return;
+    try {
+      const p = TM.releaseLock({ keepalive: true });
+      if (p && p.catch) p.catch(() => { /* 期限切れに任せる */ });
+    } catch (_) { /* 同上 */ }
+  });
 
   /* 会期（設定タブで指定した開始日〜終了日を1日ずつ展開したもの）。未設定なら空配列。 */
   const eventDates = () => (state.settings ? TM.eventDates(state.settings) : []);
@@ -106,12 +311,15 @@
       Timetable.mount({
         source: ttSource(),
         draft: state.timetable,
+        // 閲覧モードでも発表日は切り替えて見られる。ただし保存はしない
+        canSave: editing,
         saveDraft: async draft => {
           state.timetable = draft;
+          if (!editing()) return;    // 閲覧モードでは自動保存しない
           try {
             await TM.saveTimetable(draft);
           } catch (err) {
-            if (handleAuthError(err)) return;
+            if (handleAuthError(err) || handleLockError(err)) return;
             throw err;
           }
         }
@@ -214,6 +422,7 @@
 
     $("#rg-empty").hidden = !!(rows.length);
     renderMasthead();
+    applyEditable();     // 描き直した行のボタンにも閲覧モードを掛ける
   }
 
   function collectEditor(tr) {
@@ -248,7 +457,7 @@
       renderRegistrations();
       syncTimetableSource();
     } catch (err) {
-      if (handleAuthError(err)) return;
+      if (handleAuthError(err) || handleLockError(err)) return;
       notice(err.message || "保存できませんでした。", "err");
       btns.forEach(b => b.disabled = false);
     }
@@ -266,7 +475,7 @@
       syncTimetableSource();
       notice("登録を削除しました。", "ok");
     } catch (err) {
-      if (handleAuthError(err)) return;
+      if (handleAuthError(err) || handleLockError(err)) return;
       notice(err.message || "削除できませんでした。", "err");
     }
   }
@@ -308,7 +517,7 @@
     } catch (err) {
       sel.disabled = false;
       sel.value = prev;
-      if (handleAuthError(err)) return;
+      if (handleAuthError(err) || handleLockError(err)) return;
       notice(err.message || "発表日を変更できませんでした。", "err");
     }
   });
@@ -377,11 +586,12 @@
           </div>
           <div>
             <span class="mini">登録数</span>
-            <input type="text" value="${used}" disabled>
+            <input type="text" value="${used}" data-ro="1" disabled>
           </div>
         </div>
       </div>`;
     }).join("");
+    applyEditable();
   }
 
   /* 会期の入力欄の下に、いま何日間になるかを出す。 */
@@ -517,7 +727,7 @@
         + (res.cleared ? `会期から外れた ${res.cleared} 件の発表日を「未定」に戻しました。` : ""),
         res.cleared ? "warn" : "ok");
     } catch (err) {
-      if (handleAuthError(err)) return;
+      if (handleAuthError(err) || handleLockError(err)) return;
       setSettingStatus("保存できませんでした。");
       notice(err.message || "設定を保存できませんでした。", "err");
     } finally {
@@ -545,6 +755,7 @@
       state.timetable = data.timetable;
       state.editingId = null;
       state.adding = false;
+      setLock(data.lock);            // 編集権の状態も同じ応答で受け取る
       fillSettings();
       renderRegistrations();
       syncTimetableSource();
@@ -567,6 +778,8 @@
     }
     if (TM.isDemo()) {
       $("#demo-bar").classList.add("show");
+      // デモはこのブラウザ1つしか使わないので、編集権は最初から持たせておく
+      try { setLock(await TM.acquireLock(savedName(), true)); } catch (_) { /* 無視 */ }
     } else {
       $("#adm-logout").hidden = false;
       try {
@@ -578,10 +791,29 @@
     }
 
     const ok = await reload(false);
+
+    /* 編集中に再読み込みしたタブは、編集権を引き継いで戻る。
+       ・空いている              … そのまま取り直す（離れるときに手放せている）
+       ・直前の自分がまだ持っている … 引き継ぐ（手放しが間に合わなかった場合）
+       ・ほかの画面が持っている    … 閲覧モードのまま。印を消して次からは取りにいかない */
+    const prev = TM.isDemo() ? "" : store(EDIT_KEY);
+    if (prev && !state.lock.mine) {
+      if (!state.lock.held || state.lock.pageId === prev) {
+        try { setLock(await TM.acquireLock(savedName(), state.lock.held)); }
+        catch (_) { /* 取れなければ閲覧のまま */ }
+      } else {
+        store(EDIT_KEY, null);
+      }
+    }
+
     $("#loading").hidden = true;
     if (!ok) return;
     $("#shell").hidden = false;
     selectTab(0);
+
+    const flash = store(FLASH_KEY);
+    if (flash) { store(FLASH_KEY, null); notice(flash, "ok"); }
+    scheduleTick();
   }
 
   boot();

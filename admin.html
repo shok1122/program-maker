@@ -30,10 +30,20 @@
 
   <div class="notice" id="notice"></div>
 
+  <!-- 編集ロック。管理画面を同時に編集できるのは1人だけで、ここが唯一の入り口。 -->
+  <div class="editbar" id="editbar" hidden>
+    <span class="state" id="eb-state"></span>
+    <span class="grow"></span>
+    <button class="btn small" id="eb-start">編集を開始</button>
+    <button class="btn ghost small" id="eb-take" hidden>編集を引き継ぐ</button>
+    <button class="btn ghost small" id="eb-end" hidden>編集を終了</button>
+  </div>
+
   <div class="skeleton" id="loading">読み込み中…</div>
 
   <div id="shell" hidden>
-    <div class="tabs" role="tablist">
+    <!-- data-ro="1" … 閲覧モード（編集権を持っていない状態）でも操作できるもの -->
+    <div class="tabs" role="tablist" data-ro="1">
       <button class="tab" role="tab" id="tab-regs" aria-selected="true" aria-controls="panel-regs">
         登録一覧<span class="n" id="tab-regs-n">0</span>
       </button>
@@ -49,8 +59,8 @@
     <section class="tabpanel" role="tabpanel" id="panel-regs" aria-labelledby="tab-regs">
       <div class="toolbar">
         <button class="btn" id="rg-add">＋ 手動で追加</button>
-        <button class="btn ghost" id="rg-export">CSVエクスポート</button>
-        <button class="btn ghost" id="rg-reload">再読み込み</button>
+        <button class="btn ghost" id="rg-export" data-ro="1">CSVエクスポート</button>
+        <button class="btn ghost" id="rg-reload" data-ro="1">再読み込み</button>
       </div>
       <div class="hint" style="margin:-10px 0 14px">
         タイムテーブルに反映するには「タイムテーブル」タブの<b>登録一覧から読み込む</b>を使ってください（所属まで反映されます）。
@@ -81,7 +91,8 @@
 
     <!-- ============ タイムテーブル ============ -->
     <section class="tabpanel" role="tabpanel" id="panel-tt" aria-labelledby="tab-tt" hidden>
-      <div class="tt-days" id="tt-days" hidden></div>
+      <!-- 発表日の切り替えは閲覧モードでも使える（見るだけなので保存は起きない） -->
+      <div class="tt-days" id="tt-days" data-ro="1" hidden></div>
 
       <div class="tt-layout">
 
@@ -143,7 +154,7 @@
           <div class="panel">
             <h2>発表種別<span class="tail">設定タブで編集</span></h2>
             <div class="types" id="tt-types"></div>
-            <button class="btn ghost block small" id="tt-goto-set" style="margin-top:11px">設定タブで種別を編集</button>
+            <button class="btn ghost block small" id="tt-goto-set" data-ro="1" style="margin-top:11px">設定タブで種別を編集</button>
             <div class="hint">1コマ = 発表 + 質疑。種別の追加・名称・時間・強調の変更は<b>設定</b>タブで行います（★は強調表示する種別）。<br>発表の削除は行の<b>×</b>から。順序は行を<b>ドラッグ</b>、または<b>▲▼</b>で入れ替えられます（時刻は自動で振り直されます）。</div>
           </div>
         </div>
@@ -151,9 +162,9 @@
         <div class="tt-main">
           <div class="toolbar" id="tt-actions">
             <button class="btn" id="tt-regen">設定から再生成</button>
-            <button class="btn ghost" id="tt-export">CSVエクスポート</button>
+            <button class="btn ghost" id="tt-export" data-ro="1">CSVエクスポート</button>
             <button class="btn ghost" id="tt-import">CSVインポート</button>
-            <button class="btn ghost" id="tt-print">印刷 / PDF</button>
+            <button class="btn ghost" id="tt-print" data-ro="1">印刷 / PDF</button>
             <input type="file" id="tt-file" accept=".csv,text/csv" hidden>
             <span class="spacer"></span>
             <a class="btn ghost small" id="tt-public-open" target="_blank" rel="noopener" hidden>公開ページ</a>
@@ -208,7 +219,7 @@
             </div>
             <div class="field">
               <label>参加登録ページ</label>
-              <input type="text" id="st-url" readonly>
+              <input type="text" id="st-url" data-ro="1" readonly>
               <div class="hint">このURLを参加者に案内してください。</div>
             </div>
           </div>
@@ -220,7 +231,7 @@
             </label>
             <div class="field">
               <label>公開ページ</label>
-              <input type="text" id="st-public-url" readonly>
+              <input type="text" id="st-public-url" data-ro="1" readonly>
               <div class="hint">
                 公開すると、このURLを誰でも（ログインなしで）見られるようになります。
                 公開されるのは<b>いま保存されている下書き</b>（発表の時刻・タイトル・発表者・所属）です。

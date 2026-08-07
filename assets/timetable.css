@@ -222,7 +222,9 @@ tr.row-emph .ro-title{font-weight:700}
   .wrap{max-width:none;padding:0}
   .tt-layout{display:block}
   .tt-side,.toolbar,.tabs,.demo-bar,.board-head .legend,.notice,.hint,.kill,
-  #tt-actions,.masthead .tools,.tt-days{display:none !important}
+  #tt-actions,.masthead .tools,.tt-days,.editbar{display:none !important}
+  /* 閲覧モードの淡い表示は画面だけのもの。紙では通常どおり印刷する */
+  body.ro .tabpanel{opacity:1}
   .masthead{border-color:#000}
   .masthead .summary{display:none}
   .board{border:none;border-radius:0}
