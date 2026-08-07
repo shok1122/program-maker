@@ -535,6 +535,33 @@
 
   $("#rg-reload").addEventListener("click", () => reload(true));
 
+  /* ---------------- デモ版だけの一括生成 ----------------
+     連番のダミーデータをまとめて作る。件数の多いタイムテーブルの見え方を
+     試すためのもので、サーバー版には無い（#rg-demo は demo のときだけ出す）。 */
+  async function bulkDemo(replace) {
+    const box = $("#rg-bulk-n");
+    const n = Math.min(TM.bulkDemoMax(), Math.max(1, parseInt(box.value, 10) || 0));
+    box.value = String(n);
+    if (replace && state.registrations.length && !confirm(
+      `いまの登録 ${state.registrations.length} 件をすべて削除して、`
+      + `${n} 件のデモデータを作り直します。よろしいですか？`)) return;
+    const btns = [$("#rg-bulk-add"), $("#rg-bulk-new")];
+    btns.forEach(b => b.disabled = true);
+    try {
+      const res = await TM.bulkDemo(n, replace);
+      await reload(false);
+      notice(`デモデータを ${res.added} 件${replace ? "作り直しました" : "追加しました"}`
+        + `（登録 ${res.total} 件）。タイムテーブルに反映するには、`
+        + "「タイムテーブル」タブの「登録一覧から読み込む」を使ってください。", "ok");
+    } catch (err) {
+      notice(err.message || "デモデータを作れませんでした。", "err");
+    } finally {
+      btns.forEach(b => b.disabled = false);
+    }
+  }
+  $("#rg-bulk-add").addEventListener("click", () => bulkDemo(false));
+  $("#rg-bulk-new").addEventListener("click", () => bulkDemo(true));
+
   function csvCell(v) {
     v = v == null ? "" : String(v);
     return /[",\n\r]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v;
@@ -783,6 +810,8 @@
     }
     if (TM.isDemo()) {
       $("#demo-bar").classList.add("show");
+      $("#rg-demo").hidden = false;          // 登録データの一括生成（デモ版だけ）
+      $("#rg-demo-hint").hidden = false;
       // デモはこのブラウザ1つしか使わないので、編集権は最初から持たせておく
       try { setLock(await TM.acquireLock(savedName(), true)); } catch (_) { /* 無視 */ }
     } else {

@@ -125,6 +125,15 @@ button:disabled{opacity:.55;cursor:not-allowed}
 .toolbar{display:flex;gap:9px;flex-wrap:wrap;margin-bottom:16px;align-items:center}
 .toolbar .spacer{flex:1 1 auto}
 
+/* デモモードでだけ出す一括生成のツール。本来の操作と見分けが付くよう破線で囲う。 */
+.demo-tools{
+  display:flex;align-items:center;gap:7px;margin-left:auto;
+  padding:4px 9px;border:1px dashed var(--border-strong);border-radius:9px;
+}
+.demo-tools[hidden]{display:none}
+.demo-tools .lbl{font-size:11px;color:var(--ink-faint);white-space:nowrap}
+.demo-tools input[type=number]{width:70px;padding:5px 7px;font-size:12.5px}
+
 /* ---- notice ---- */
 .notice{
   margin-bottom:16px;padding:11px 14px;border-radius:9px;font-size:13px;

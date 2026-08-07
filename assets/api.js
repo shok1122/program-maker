@@ -14,7 +14,11 @@
 
 window.TM = (function () {
 
-  const DEMO_STORAGE_KEY = "tm-demo-v2";
+  const DEMO_STORAGE_KEY = "tm-demo-v3";
+  /* 読み替えずに捨てる古い版のデモデータ。デモは中身が使い捨てなので、
+     初期状態の作りを変えたときはキーを上げて作り直す。
+     取り残しがブラウザに残り続けないよう、seed のときに消しておく。 */
+  const DEMO_OLD_KEYS = ["tm-demo-v1", "tm-demo-v2"];
   let MODE = null;
 
   /* ---------------- 共通ユーティリティ ---------------- */
@@ -210,89 +214,12 @@ window.TM = (function () {
 
   /* ---------------- demo 実装（localStorage） ---------------- */
 
+  /* デモの初期状態。設定（種別・会期・参加登録キー）だけを用意し、登録は空にしておく。
+     中身は参加登録ページから申し込むか、管理画面のデモ用の一括生成（bulkDemo）で作る。
+     タイムテーブルの下書きも持たせない（下書きの無い発表日は、タイムテーブルタブを
+     開いたときにその日の登録一覧から組み立てられる）。 */
   function demoSeed() {
-    const types = [
-      { id: uid(), name: "発表A", talk: 20, qa: 5 },
-      { id: uid(), name: "発表B", talk: 10, qa: 5 },
-      { id: uid(), name: "ポスター発表", talk: 0, qa: 0 }
-    ];
     const days = ["2026-04-10", "2026-04-11"];
-    // [種別, タイトル, 発表者, 所属, 発表日(days の位置)]
-    const samples = [
-      [0, "Title A-11", "Name 11", "XXX大学", 0],
-      [1, "Title A-12", "Name 12", "XXX大学", 0],
-      [0, "Title A-13", "Name 13", "YYY大学", 0],
-      [1, "Title A-14", "Name 14", "YYY大学", 0],
-      [0, "Title A-15", "Name 15", "XXX大学", 0],
-      [1, "Title A-16", "Name 16", "XXX大学", 0],
-      [0, "Title A-17", "Name 17", "YYY大学", 0],
-      [1, "Title A-18", "Name 18", "YYY大学", 0],
-      [0, "Title A-19", "Name 19", "XXX大学", 0],
-      [1, "Title A-1A", "Name 1A", "XXX大学", 0],
-      [1, "Title A-1B", "Name 1B", "XXX大学", 0],
-      [1, "Title A-1C", "Name 1C", "XXX大学", 0],
-      [1, "Title A-1D", "Name 1D", "YYY大学", 0],
-      [1, "Title A-1E", "Name 1E", "YYY大学", 0],
-      [1, "Title A-1F", "Name 1F", "YYY大学", 0],
-      [0, "Title A-21", "Name 21", "XXX大学", 1],
-      [0, "Title A-22", "Name 22", "XXX大学", 1],
-      [0, "Title A-23", "Name 23", "YYY大学", 1],
-      [0, "Title A-24", "Name 24", "YYY大学", 1],
-      [0, "Title A-25", "Name 25", "XXX大学", 1],
-      [0, "Title A-26", "Name 26", "XXX大学", 1],
-      [0, "Title A-27", "Name 27", "YYY大学", 1],
-      [0, "Title A-28", "Name 28", "YYY大学", 1],
-      [0, "Title A-29", "Name 29", "XXX大学", 1],
-      [0, "Title A-2A", "Name 2A", "XXX大学", 1],
-      [1, "Title A-2B", "Name 2B", "XXX大学", 1],
-      [1, "Title A-2C", "Name 2C", "XXX大学", 1],
-      [1, "Title A-2D", "Name 2D", "YYY大学", 1],
-      [1, "Title A-2E", "Name 2E", "YYY大学", 1],
-      [1, "Title A-2F", "Name 2F", "YYY大学", 1],
-      [2, "Title B1", "Name 11", "XXX大学", 1],
-      [2, "Title B2", "Name 12", "XXX大学", 1],
-      [2, "Title B3", "Name 13", "YYY大学", 1],
-      [2, "Title B4", "Name 14", "YYY大学", 1]
-    ];
-    const t0 = Date.UTC(2026, 3, 10, 1, 0, 0);
-    const registrations = samples.map((s, i) => ({
-      id: uid(),
-      typeId: types[s[0]].id,
-      typeName: types[s[0]].name,
-      title: s[1], speaker: s[2], affiliation: s[3], date: days[s[4]],
-      createdAt: new Date(t0 + i * 3600e3).toISOString(),
-      updatedAt: new Date(t0 + i * 3600e3).toISOString()
-    }));
-
-    /* タイムテーブルの下書きも用意しておく。ポスター発表は発表＋質疑が0分で
-       表には並べられないので、コアタイムを「特別」の枠として置き、
-       表の下に出るポスター発表の一覧と対になるようにしている。
-       ほかの内容（開始時刻・ランチ・休憩）は下書きが無いときの初期値と同じで、
-       口頭発表が終わったあとにコアタイムが続くように時刻を決めている。 */
-    // ポスター発表のコアタイム（days と同じ並び。null はその日は枠なし）
-    const posterCore = [
-      null,                              // 1日目（ポスター発表の登録は無い）
-      { start: "13:00", end: "14:00" }   // 2日目
-    ];
-    const timetableDays = {};
-    days.forEach((day, i) => {
-      timetableDays[day] = {
-        start: "09:00",
-        lunchOn: true, lunchStart: "12:00", lunchEnd: "13:00", showGap: true,
-        talkTypes: types.map(t => ({ id: t.id, name: t.name, talk: t.talk, qa: t.qa, emphasis: false })),
-        talkList: registrations.filter(r => r.date === day).map(r => ({
-          id: uid(), typeId: r.typeId,
-          title: r.title, speaker: r.speaker, affiliation: r.affiliation
-        })),
-        breakSlots: [{ id: uid(), start: "15:00", end: "15:15", label: "休憩" }],
-        specialSlots: posterCore[i]
-          ? [{ id: uid(), start: posterCore[i].start, end: posterCore[i].end,
-               label: "ポスター発表" }]
-          : [],
-        absolute: false, items: null
-      };
-    });
-
     return {
       version: 1,
       settings: {
@@ -305,14 +232,55 @@ window.TM = (function () {
         eventStart: days[0],
         eventEnd: days[days.length - 1],
         publicTimetable: true,      // デモでは公開ページも見られるようにしておく
-        types
+        types: [
+          { id: uid(), name: "発表A", talk: 20, qa: 5 },
+          { id: uid(), name: "発表B", talk: 10, qa: 5 },
+          { id: uid(), name: "ポスター発表", talk: 0, qa: 0 }
+        ]
       },
-      registrations,
-      timetable: {
-        version: 2, current: days[0], days: timetableDays,
-        savedAt: new Date().toISOString()
-      }
+      registrations: [],
+      timetable: null
     };
+  }
+
+  /* デモ用の連番データ。件数の多いタイムテーブルの見え方をその場で試せるように、
+     タイトル・発表者を連番、所属を数種類の使い回しで作る。
+     種別は定義順に一巡ずつ、発表日は会期を日ごとのまとまりで均等に割り当てる
+     （会期が未設定なら「未定」のまま）。 */
+  const DEMO_BULK_MAX = 500;
+  const DEMO_AFFILIATIONS = ["XXX大学", "YYY大学", "ZZZ大学", "○○工科大学", "△△研究所"];
+
+  function demoBulkMake(settings, count, startNo) {
+    const types = settings.types || [];
+    if (!types.length) throw fail("種別が定義されていません。");
+    const days = eventDates(settings);
+    const t0 = Date.now();
+    const out = [];
+    for (let i = 0; i < count; i++) {
+      const type = types[i % types.length];
+      const no = startNo + i;
+      const stamp = new Date(t0 + i * 1000).toISOString();
+      out.push({
+        id: uid(),
+        typeId: type.id, typeName: type.name,
+        title: "Title " + no,
+        speaker: "Name " + no,
+        affiliation: DEMO_AFFILIATIONS[i % DEMO_AFFILIATIONS.length],
+        date: days.length ? days[Math.floor(i * days.length / count)] : "",
+        createdAt: stamp, updatedAt: stamp
+      });
+    }
+    return out;
+  }
+  /* 追加のときに連番が重ならないよう、既存の "Title 12" から次の番号を決める。 */
+  const DEMO_NO_RE = /^Title\s+(\d+)$/;
+  function demoNextNo(registrations) {
+    let max = 0;
+    for (const r of registrations || []) {
+      const m = DEMO_NO_RE.exec(String(r.title == null ? "" : r.title).trim());
+      if (m) max = Math.max(max, +m[1]);
+    }
+    return max + 1;
   }
 
   function demoRead() {
@@ -321,17 +289,18 @@ window.TM = (function () {
     if (raw) {
       try {
         const d = JSON.parse(raw);
-        if (d && d.settings && Array.isArray(d.registrations)) {
-          // 公開フラグを持たないころのデモデータは、seed と同じ「公開」で始める
-          if (typeof d.settings.publicTimetable !== "boolean") d.settings.publicTimetable = true;
-          if (typeof d.settings.venue !== "string") d.settings.venue = "";
-          return d;
-        }
+        if (d && d.settings && Array.isArray(d.registrations)) return d;
       } catch (_) { /* 壊れていれば作り直す */ }
     }
+    demoForget(DEMO_OLD_KEYS);
     const seeded = demoSeed();
     demoWrite(seeded);
     return seeded;
+  }
+  function demoForget(keys) {
+    for (const k of keys) {
+      try { localStorage.removeItem(k); } catch (_) { /* 無視 */ }
+    }
   }
   function demoWrite(data) {
     try { localStorage.setItem(DEMO_STORAGE_KEY, JSON.stringify(data)); } catch (_) { /* 無視 */ }
@@ -461,9 +430,18 @@ window.TM = (function () {
       return { ok: true };
     })),
     resetDemo: () => {
-      try { localStorage.removeItem(DEMO_STORAGE_KEY); } catch (_) { /* 無視 */ }
+      demoForget([DEMO_STORAGE_KEY]);
       return later({ ok: true });
-    }
+    },
+    /* replace なら既存の登録を捨てて作り直し、そうでなければ後ろに足す。
+       タイムテーブルの下書きはそのまま（手で削除したときと同じで、
+       反映は「登録一覧から読み込む」で行う）。 */
+    bulkDemo: (count, replace) => later(demoMutate(data => {
+      const n = Math.min(DEMO_BULK_MAX, Math.max(1, Math.round(+count) || 0));
+      const made = demoBulkMake(data.settings, n, replace ? 1 : demoNextNo(data.registrations));
+      data.registrations = replace ? made : data.registrations.concat(made);
+      return { ok: true, added: made.length, total: data.registrations.length, replace: !!replace };
+    }))
   };
 
   /* ---------------- モード判定 ---------------- */
@@ -501,7 +479,12 @@ window.TM = (function () {
     pageId: () => PAGE_ID,
     mode: () => MODE,
     isDemo: () => MODE === "demo",
-    resetDemo: () => (MODE === "demo" ? demoApi.resetDemo() : Promise.resolve({ ok: false }))
+    resetDemo: () => (MODE === "demo" ? demoApi.resetDemo() : Promise.resolve({ ok: false })),
+    /* デモ版だけの機能。サーバー版には対応するAPIが無いので呼ばれたら断る。 */
+    bulkDemo: (count, replace) => (MODE === "demo"
+      ? demoApi.bulkDemo(count, replace)
+      : Promise.reject(fail("デモモードでのみ使えます。", 400))),
+    bulkDemoMax: () => DEMO_BULK_MAX
   };
   for (const name of ["getConfig", "getProgram", "register", "session", "login", "logout", "getData",
                       "getLock", "acquireLock", "releaseLock",
