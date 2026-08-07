@@ -249,12 +249,50 @@ window.TM = (function () {
       [1, "Title A-2D", "Name 2D", "YYY大学", 1],
       [1, "Title A-2E", "Name 2E", "YYY大学", 1],
       [1, "Title A-2F", "Name 2F", "YYY大学", 1],
-      [2, "Title B1", "Name 11", "XXX大学", 0],
-      [2, "Title B2", "Name 12", "XXX大学", 0],
+      [2, "Title B1", "Name 11", "XXX大学", 1],
+      [2, "Title B2", "Name 12", "XXX大学", 1],
       [2, "Title B3", "Name 13", "YYY大学", 1],
       [2, "Title B4", "Name 14", "YYY大学", 1]
     ];
     const t0 = Date.UTC(2026, 3, 10, 1, 0, 0);
+    const registrations = samples.map((s, i) => ({
+      id: uid(),
+      typeId: types[s[0]].id,
+      typeName: types[s[0]].name,
+      title: s[1], speaker: s[2], affiliation: s[3], date: days[s[4]],
+      createdAt: new Date(t0 + i * 3600e3).toISOString(),
+      updatedAt: new Date(t0 + i * 3600e3).toISOString()
+    }));
+
+    /* タイムテーブルの下書きも用意しておく。ポスター発表は発表＋質疑が0分で
+       表には並べられないので、コアタイムを「特別」の枠として置き、
+       表の下に出るポスター発表の一覧と対になるようにしている。
+       ほかの内容（開始時刻・ランチ・休憩）は下書きが無いときの初期値と同じで、
+       口頭発表が終わったあとにコアタイムが続くように時刻を決めている。 */
+    // ポスター発表のコアタイム（days と同じ並び。null はその日は枠なし）
+    const posterCore = [
+      null,                              // 1日目（ポスター発表の登録は無い）
+      { start: "13:00", end: "14:00" }   // 2日目
+    ];
+    const timetableDays = {};
+    days.forEach((day, i) => {
+      timetableDays[day] = {
+        start: "09:00",
+        lunchOn: true, lunchStart: "12:00", lunchEnd: "13:00", showGap: true,
+        talkTypes: types.map(t => ({ id: t.id, name: t.name, talk: t.talk, qa: t.qa, emphasis: false })),
+        talkList: registrations.filter(r => r.date === day).map(r => ({
+          id: uid(), typeId: r.typeId,
+          title: r.title, speaker: r.speaker, affiliation: r.affiliation
+        })),
+        breakSlots: [{ id: uid(), start: "15:00", end: "15:15", label: "休憩" }],
+        specialSlots: posterCore[i]
+          ? [{ id: uid(), start: posterCore[i].start, end: posterCore[i].end,
+               label: "ポスター発表" }]
+          : [],
+        absolute: false, items: null
+      };
+    });
+
     return {
       version: 1,
       settings: {
@@ -269,15 +307,11 @@ window.TM = (function () {
         publicTimetable: true,      // デモでは公開ページも見られるようにしておく
         types
       },
-      registrations: samples.map((s, i) => ({
-        id: uid(),
-        typeId: types[s[0]].id,
-        typeName: types[s[0]].name,
-        title: s[1], speaker: s[2], affiliation: s[3], date: days[s[4]],
-        createdAt: new Date(t0 + i * 3600e3).toISOString(),
-        updatedAt: new Date(t0 + i * 3600e3).toISOString()
-      })),
-      timetable: null
+      registrations,
+      timetable: {
+        version: 2, current: days[0], days: timetableDays,
+        savedAt: new Date().toISOString()
+      }
     };
   }
 
