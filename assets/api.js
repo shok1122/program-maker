@@ -212,34 +212,34 @@ window.TM = (function () {
 
   function demoSeed() {
     const types = [
-      { id: uid(), name: "発表A", talk: 12, qa: 3 },
-      { id: uid(), name: "発表B", talk: 7, qa: 3 },
+      { id: uid(), name: "発表A", talk: 20, qa: 5 },
+      { id: uid(), name: "発表B", talk: 10, qa: 5 },
       { id: uid(), name: "ポスター発表", talk: 0, qa: 0 }
     ];
     const days = ["2026-04-10", "2026-04-11"];
     // [種別, タイトル, 発表者, 所属, 発表日(days の位置)]
     const samples = [
-      [0, "Title 1", "Name 1", "XXX大学", 0],
-      [1, "Title 2", "Name 2", "XXX大学", 0],
-      [0, "Title 3", "Name 3", "YYY大学", 0],
-      [1, "Title 4", "Name 4", "YYY大学", 0],
-      [0, "Title 5", "Name 5", "XXX大学", 0],
-      [1, "Title 6", "Name 6", "XXX大学", 0],
-      [0, "Title 7", "Name 7", "YYY大学", 0],
-      [1, "Title 8", "Name 8", "YYY大学", 1],
-      [0, "Title 9", "Name 9", "XXX大学", 1],
-      [1, "Title 10", "Name 10", "XXX大学", 1],
-      [2, "Title 11", "Name 11", "XXX大学", 0],
-      [2, "Title 12", "Name 12", "XXX大学", 0],
-      [2, "Title 13", "Name 13", "YYY大学", 1],
-      [2, "Title 14", "Name 14", "YYY大学", 1]
+      [0, "Title A1", "Name 1", "XXX大学", 0],
+      [1, "Title A2", "Name 2", "XXX大学", 0],
+      [0, "Title A3", "Name 3", "YYY大学", 0],
+      [1, "Title A4", "Name 4", "YYY大学", 0],
+      [0, "Title A5", "Name 5", "XXX大学", 0],
+      [1, "Title A6", "Name 6", "XXX大学", 0],
+      [0, "Title A7", "Name 7", "YYY大学", 0],
+      [1, "Title A8", "Name 8", "YYY大学", 1],
+      [0, "Title A9", "Name 9", "XXX大学", 1],
+      [1, "Title A0", "Name 10", "XXX大学", 1],
+      [2, "Title B1", "Name 11", "XXX大学", 0],
+      [2, "Title B2", "Name 12", "XXX大学", 0],
+      [2, "Title B3", "Name 13", "YYY大学", 1],
+      [2, "Title B4", "Name 14", "YYY大学", 1]
     ];
     const t0 = Date.UTC(2026, 3, 10, 1, 0, 0);
     return {
       version: 1,
       settings: {
         eventName: "第12回 サンプル研究発表会",
-        venue: "サンプル大学 百年記念館 大ホール",
+        venue: "サンプル大学 大ホール",
         notice: "発表申込は下記フォームからお願いします。1件ずつ登録してください。\n"
               + "内容の修正・取り消しは事務局までご連絡ください。",
         registrationOpen: true,
