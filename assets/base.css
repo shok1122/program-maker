@@ -133,6 +133,7 @@ button:disabled{opacity:.55;cursor:not-allowed}
 .demo-tools[hidden]{display:none}
 .demo-tools .lbl{font-size:11px;color:var(--ink-faint);white-space:nowrap}
 .demo-tools input[type=number]{width:70px;padding:5px 7px;font-size:12.5px}
+.demo-tools select{width:auto;max-width:170px;padding:5px 7px;font-size:12.5px}
 
 /* ---- notice ---- */
 .notice{

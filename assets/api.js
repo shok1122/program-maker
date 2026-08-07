@@ -245,19 +245,22 @@ window.TM = (function () {
 
   /* デモ用の連番データ。件数の多いタイムテーブルの見え方をその場で試せるように、
      タイトル・発表者を連番、所属を数種類の使い回しで作る。
-     種別は定義順に一巡ずつ、発表日は会期を日ごとのまとまりで均等に割り当てる
-     （会期が未設定なら「未定」のまま）。 */
+     種別は typeId で指定でき、指定が無ければ定義順に一巡ずつ割り当てる。
+     発表日は会期を日ごとのまとまりで均等に（会期が未設定なら「未定」のまま）。 */
   const DEMO_BULK_MAX = 500;
   const DEMO_AFFILIATIONS = ["XXX大学", "YYY大学", "ZZZ大学", "○○工科大学", "△△研究所"];
 
-  function demoBulkMake(settings, count, startNo) {
+  function demoBulkMake(settings, count, startNo, typeId) {
     const types = settings.types || [];
     if (!types.length) throw fail("種別が定義されていません。");
+    const wanted = String(typeId == null ? "" : typeId);
+    const only = wanted ? types.find(t => t.id === wanted) : null;
+    if (wanted && !only) throw fail("種別を選択してください。");
     const days = eventDates(settings);
     const t0 = Date.now();
     const out = [];
     for (let i = 0; i < count; i++) {
-      const type = types[i % types.length];
+      const type = only || types[i % types.length];
       const no = startNo + i;
       const stamp = new Date(t0 + i * 1000).toISOString();
       out.push({
@@ -433,14 +436,19 @@ window.TM = (function () {
       demoForget([DEMO_STORAGE_KEY]);
       return later({ ok: true });
     },
-    /* replace なら既存の登録を捨てて作り直し、そうでなければ後ろに足す。
-       タイムテーブルの下書きはそのまま（手で削除したときと同じで、
-       反映は「登録一覧から読み込む」で行う）。 */
-    bulkDemo: (count, replace) => later(demoMutate(data => {
+    /* 連番の登録データを一覧の後ろに足す。typeId が空なら種別は順番に割り当てる。 */
+    bulkDemo: (count, typeId) => later(demoMutate(data => {
       const n = Math.min(DEMO_BULK_MAX, Math.max(1, Math.round(+count) || 0));
-      const made = demoBulkMake(data.settings, n, replace ? 1 : demoNextNo(data.registrations));
-      data.registrations = replace ? made : data.registrations.concat(made);
-      return { ok: true, added: made.length, total: data.registrations.length, replace: !!replace };
+      const made = demoBulkMake(data.settings, n, demoNextNo(data.registrations), typeId);
+      data.registrations = data.registrations.concat(made);
+      return { ok: true, added: made.length, total: data.registrations.length };
+    })),
+    /* 登録だけを空にする（設定とタイムテーブルの下書きは残す。
+       下書きの扱いは、登録を1件ずつ削除したときと同じ）。 */
+    clearDemo: () => later(demoMutate(data => {
+      const removed = data.registrations.length;
+      data.registrations = [];
+      return { ok: true, removed };
     }))
   };
 
@@ -481,8 +489,11 @@ window.TM = (function () {
     isDemo: () => MODE === "demo",
     resetDemo: () => (MODE === "demo" ? demoApi.resetDemo() : Promise.resolve({ ok: false })),
     /* デモ版だけの機能。サーバー版には対応するAPIが無いので呼ばれたら断る。 */
-    bulkDemo: (count, replace) => (MODE === "demo"
-      ? demoApi.bulkDemo(count, replace)
+    bulkDemo: (count, typeId) => (MODE === "demo"
+      ? demoApi.bulkDemo(count, typeId)
+      : Promise.reject(fail("デモモードでのみ使えます。", 400))),
+    clearDemo: () => (MODE === "demo"
+      ? demoApi.clearDemo()
       : Promise.reject(fail("デモモードでのみ使えます。", 400))),
     bulkDemoMax: () => DEMO_BULK_MAX
   };

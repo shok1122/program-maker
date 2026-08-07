@@ -64,17 +64,18 @@
         <!-- デモ版だけの動作確認用。assets/admin.js が demo モードのときだけ出す -->
         <span class="demo-tools" id="rg-demo" hidden>
           <span class="lbl">デモ</span>
+          <select id="rg-bulk-type" aria-label="一括追加する種別"></select>
           <input type="number" id="rg-bulk-n" min="1" max="500" step="1" value="30"
-                 aria-label="一括で作る件数">
+                 aria-label="一括追加する件数">
           <span class="lbl">件</span>
-          <button class="btn ghost small" id="rg-bulk-add">一括で追加</button>
-          <button class="btn ghost small" id="rg-bulk-new">一括で作成</button>
+          <button class="btn ghost small" id="rg-bulk-add">一括追加</button>
+          <button class="btn danger small" id="rg-bulk-clear">全て削除</button>
         </span>
       </div>
       <div class="hint" id="rg-demo-hint" style="margin:-10px 0 14px" hidden>
-        <b>デモ</b>：<b>一括で追加</b>は <code>Title 1</code> / <code>Name 1</code> のような連番の登録データを指定した件数だけ
-        いまの一覧に足します。<b>一括で作成</b>はいまの登録をすべて置き換えて作り直します。
-        種別は定義順に一巡ずつ、発表日は会期に均等に割り当てます。
+        <b>デモ</b>：<b>一括追加</b>は <code>Title 1</code> / <code>Name 1</code> のような連番の登録データを、
+        選んだ種別で指定した件数だけ一覧に足します（種別を「順番に」にすると、定義順で一巡ずつ割り当てます）。
+        発表日は会期に均等に割り当てます。<b>全て削除</b>はいまの登録をすべて消します。
       </div>
       <div class="hint" style="margin:-10px 0 14px">
         タイムテーブルに反映するには「タイムテーブル」タブの<b>登録一覧から読み込む</b>を使ってください（所属まで反映されます）。

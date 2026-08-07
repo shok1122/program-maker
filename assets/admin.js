@@ -538,29 +538,59 @@
   /* ---------------- デモ版だけの一括生成 ----------------
      連番のダミーデータをまとめて作る。件数の多いタイムテーブルの見え方を
      試すためのもので、サーバー版には無い（#rg-demo は demo のときだけ出す）。 */
-  async function bulkDemo(replace) {
+
+  /* 種別の選択肢。設定タブで種別を変えたあとも選んでいたものを保つ。 */
+  function renderBulkTypes() {
+    const sel = $("#rg-bulk-type");
+    const keep = sel.value;
+    const types = (state.settings && state.settings.types) || [];
+    sel.innerHTML = `<option value="">順番に</option>`
+      + types.map(t => `<option value="${esc(t.id)}">${esc(t.name)}</option>`).join("");
+    if (keep && types.some(t => t.id === keep)) sel.value = keep;
+  }
+
+  /* 下書きを持つ発表日は、登録を足しても表には出てこない（読み込み直しが要る）。 */
+  const draftNote = () => (state.timetable
+    ? "タイムテーブルに反映するには、「タイムテーブル」タブの「登録一覧から読み込む」を使ってください。"
+    : "");
+
+  async function withBulkButtons(fn) {
+    const btns = [$("#rg-bulk-add"), $("#rg-bulk-clear")];
+    btns.forEach(b => b.disabled = true);
+    try { await fn(); }
+    finally { btns.forEach(b => b.disabled = false); }
+  }
+
+  $("#rg-bulk-add").addEventListener("click", () => withBulkButtons(async () => {
     const box = $("#rg-bulk-n");
     const n = Math.min(TM.bulkDemoMax(), Math.max(1, parseInt(box.value, 10) || 0));
     box.value = String(n);
-    if (replace && state.registrations.length && !confirm(
-      `いまの登録 ${state.registrations.length} 件をすべて削除して、`
-      + `${n} 件のデモデータを作り直します。よろしいですか？`)) return;
-    const btns = [$("#rg-bulk-add"), $("#rg-bulk-new")];
-    btns.forEach(b => b.disabled = true);
+    const sel = $("#rg-bulk-type");
+    const typeName = sel.value ? sel.options[sel.selectedIndex].text : "";
     try {
-      const res = await TM.bulkDemo(n, replace);
+      const res = await TM.bulkDemo(n, sel.value);
       await reload(false);
-      notice(`デモデータを ${res.added} 件${replace ? "作り直しました" : "追加しました"}`
-        + `（登録 ${res.total} 件）。タイムテーブルに反映するには、`
-        + "「タイムテーブル」タブの「登録一覧から読み込む」を使ってください。", "ok");
+      notice(`デモデータを ${res.added} 件追加しました`
+        + `${typeName ? `（種別：${typeName}）` : ""}。登録は ${res.total} 件です。` + draftNote(), "ok");
     } catch (err) {
       notice(err.message || "デモデータを作れませんでした。", "err");
-    } finally {
-      btns.forEach(b => b.disabled = false);
     }
-  }
-  $("#rg-bulk-add").addEventListener("click", () => bulkDemo(false));
-  $("#rg-bulk-new").addEventListener("click", () => bulkDemo(true));
+  }));
+
+  $("#rg-bulk-clear").addEventListener("click", () => withBulkButtons(async () => {
+    const n = state.registrations.length;
+    if (!n) { notice("登録はまだありません。", "warn"); return; }
+    if (!confirm(`いまの登録 ${n} 件をすべて削除します。よろしいですか？`)) return;
+    try {
+      const res = await TM.clearDemo();
+      const hadDraft = !!state.timetable;
+      await reload(false);
+      notice(`登録 ${res.removed} 件をすべて削除しました。`
+        + (hadDraft ? "タイムテーブルの下書きは残っています（1件ずつ削除したときと同じです）。" : ""), "ok");
+    } catch (err) {
+      notice(err.message || "登録を削除できませんでした。", "err");
+    }
+  }));
 
   function csvCell(v) {
     v = v == null ? "" : String(v);
@@ -662,6 +692,7 @@
       id: t.id, name: t.name, talk: t.talk, qa: t.qa, emphasis: t.emphasis === true
     }));
     renderSettingTypes();
+    renderBulkTypes();     // デモの一括追加の種別（保存済みの種別が正）
     setSettingStatus("変更後に押してください。");
   }
 
