@@ -70,9 +70,24 @@
             dates.length > 1 ? "–" + TM.dateLabel(dates[dates.length - 1]) : ""}</b></span>`
         : "") +
       `<span>受付 <b>${s.registrationOpen ? "受付中" : "停止"}</b></span>` +
-      `<span>キー <b>${s.registrationKey ? "設定あり" : "なし"}</b></span>`;
+      `<span>キー <b>${s.registrationKey ? "設定あり" : "なし"}</b></span>` +
+      `<span>公開 <b>${s.publicTimetable ? "公開中" : "非公開"}</b></span>`;
     $("#tab-regs-n").textContent = String(state.registrations.length);
+    renderPublicState();
   }
+
+  /* タイムテーブルタブの公開状態の表示（保存済みの設定が正）。 */
+  function renderPublicState() {
+    const on = !!(state.settings && state.settings.publicTimetable);
+    const badge = $("#tt-public-badge");
+    badge.hidden = false;
+    badge.className = "badge " + (on ? "on" : "off");
+    badge.textContent = on ? "公開中" : "非公開";
+    const link = $("#tt-public-open");
+    link.hidden = !on;
+    link.href = programUrl();
+  }
+  const programUrl = () => new URL("program.html", location.href).href;
 
   /* ---------------- タブ ---------------- */
   const TABS = [
@@ -399,12 +414,29 @@
     renderDateHint();
     $("#st-notice").value = s.notice || "";
     $("#st-url").value = new URL("index.html", location.href).href;
+    $("#st-public").checked = !!s.publicTimetable;
+    $("#st-public-url").value = programUrl();
+    renderPublicTag();
     draftTypes = s.types.map(t => ({
       id: t.id, name: t.name, talk: t.talk, qa: t.qa, emphasis: t.emphasis === true
     }));
     renderSettingTypes();
     setSettingStatus("変更後に押してください。");
   }
+
+  /* 「タイムテーブルの公開」パネルの見出しとリンク。
+     公開されるのは保存済みの設定なので、チェックを入れただけではリンクを出さない。 */
+  function renderPublicTag() {
+    const saved = !!(state.settings && state.settings.publicTimetable);
+    const now = $("#st-public").checked;
+    $("#st-public-tag").textContent = saved
+      ? (now ? "公開中" : "保存すると非公開になります")
+      : (now ? "保存すると公開されます" : "非公開");
+    const link = $("#st-public-open");
+    link.hidden = !saved;
+    link.href = programUrl();
+  }
+  $("#st-public").addEventListener("change", renderPublicTag);
 
   function setSettingStatus(text, ok) {
     const el = $("#st-status");
@@ -447,6 +479,11 @@
     const losing = state.registrations.filter(r => r.date && !next.has(r.date)).length;
     if (losing && !confirm(
       `会期から外れる発表日が ${losing} 件あります。これらの発表日は「未定」に戻ります。よろしいですか？`)) return;
+    // 非公開から公開に切り替えるときは、何が見えるようになるのかを確認する
+    if ($("#st-public").checked && !state.settings.publicTimetable && !confirm(
+      "タイムテーブルを一般公開します。発表のタイトル・発表者・所属が、"
+      + "ログインなしで誰でも見られるようになります。よろしいですか？")) return;
+    const wasPublic = !!state.settings.publicTimetable;
     const btn = $("#st-save");
     btn.disabled = true;
     setSettingStatus("保存中…");
@@ -456,6 +493,7 @@
         notice: $("#st-notice").value,
         registrationOpen: $("#st-open").checked,
         registrationKey: $("#st-key").value,
+        publicTimetable: $("#st-public").checked,
         eventStart: $("#st-date-start").value,
         eventEnd: $("#st-date-end").value,
         types: draftTypes.map(t => ({
@@ -470,7 +508,12 @@
       renderRegistrations();
       syncTimetableSource();
       setSettingStatus("保存しました。", true);
+      const nowPublic = !!state.settings.publicTimetable;
       notice("設定を保存しました。"
+        + (nowPublic !== wasPublic
+            ? (nowPublic ? `タイムテーブルを公開しました（${programUrl()}）。`
+                         : "タイムテーブルを非公開にしました。")
+            : "")
         + (res.cleared ? `会期から外れた ${res.cleared} 件の発表日を「未定」に戻しました。` : ""),
         res.cleared ? "warn" : "ok");
     } catch (err) {

@@ -115,7 +115,39 @@ window.TM = (function () {
       notice: settings.notice,
       registrationOpen: settings.registrationOpen,
       keyRequired: !!settings.registrationKey,
+      timetablePublic: !!settings.publicTimetable,
       types: (settings.types || []).map(t => ({ id: t.id, name: t.name, talk: t.talk, qa: t.qa }))
+    };
+  }
+
+  /* 一般公開ページに渡す内容（サーバー版の /api/program と同じ形）。
+     公開フラグが立っていないあいだはタイムテーブルの中身を渡さない。
+     下書きを持つ発表日の登録は渡さない（下書きから外した発表を見せないため）。 */
+  function programPayload(data) {
+    const s = data.settings;
+    if (!s.publicTimetable) return { published: false };
+    const tt = data.timetable;
+    const drafted = new Set();
+    if (tt && typeof tt === "object") {
+      if (tt.days && typeof tt.days === "object" && !Array.isArray(tt.days))
+        Object.keys(tt.days).forEach(k => drafted.add(String(k)));
+      else if (Array.isArray(tt.talkList) || tt.start)
+        drafted.add(eventDates(s)[0] || "");   // 発表日を持たなかったころの下書き
+    }
+    return {
+      published: true,
+      eventName: s.eventName,
+      eventStart: s.eventStart || "",
+      eventEnd: s.eventEnd || "",
+      types: (s.types || []).map(t => ({ id: t.id, name: t.name, talk: t.talk, qa: t.qa,
+                                         emphasis: t.emphasis === true })),
+      timetable: data.timetable,
+      registrations: (data.registrations || [])
+        .filter(r => !drafted.has(isoDate(r.date)))
+        .map(r => ({
+          typeId: r.typeId, typeName: r.typeName, title: r.title,
+          speaker: r.speaker, affiliation: r.affiliation, date: r.date
+        }))
     };
   }
 
@@ -148,6 +180,7 @@ window.TM = (function () {
 
   const serverApi = {
     getConfig: () => http("api/config"),
+    getProgram: () => http("api/program"),
     register: input => http("api/registrations", "POST", input),
     session: () => http("api/admin/session"),
     login: password => http("api/admin/login", "POST", { password }),
@@ -199,6 +232,7 @@ window.TM = (function () {
         registrationKey: "demo",
         eventStart: days[0],
         eventEnd: days[days.length - 1],
+        publicTimetable: true,      // デモでは公開ページも見られるようにしておく
         types
       },
       registrations: samples.map((s, i) => ({
@@ -219,7 +253,11 @@ window.TM = (function () {
     if (raw) {
       try {
         const d = JSON.parse(raw);
-        if (d && d.settings && Array.isArray(d.registrations)) return d;
+        if (d && d.settings && Array.isArray(d.registrations)) {
+          // 公開フラグを持たないころのデモデータは、seed と同じ「公開」で始める
+          if (typeof d.settings.publicTimetable !== "boolean") d.settings.publicTimetable = true;
+          return d;
+        }
       } catch (_) { /* 壊れていれば作り直す */ }
     }
     const seeded = demoSeed();
@@ -239,6 +277,7 @@ window.TM = (function () {
 
   const demoApi = {
     getConfig: () => later(publicConfig(demoRead().settings, "demo")),
+    getProgram: () => later(programPayload(demoRead())),
     register: input => later(demoMutate(data => {
       const s = data.settings;
       if (!s.registrationOpen) throw fail("現在、参加登録を受け付けていません。", 409);
@@ -260,6 +299,7 @@ window.TM = (function () {
       if ("notice" in settings) s.notice = multiLine(settings.notice, LIMITS.notice);
       if ("registrationOpen" in settings) s.registrationOpen = !!settings.registrationOpen;
       if ("registrationKey" in settings) s.registrationKey = oneLine(settings.registrationKey, LIMITS.key);
+      if ("publicTimetable" in settings) s.publicTimetable = !!settings.publicTimetable;
       if ("eventStart" in settings || "eventEnd" in settings) {
         const p = normalizePeriod("eventStart" in settings ? settings.eventStart : s.eventStart,
                                   "eventEnd" in settings ? settings.eventEnd : s.eventEnd);
@@ -362,7 +402,7 @@ window.TM = (function () {
     isDemo: () => MODE === "demo",
     resetDemo: () => (MODE === "demo" ? demoApi.resetDemo() : Promise.resolve({ ok: false }))
   };
-  for (const name of ["getConfig", "register", "session", "login", "logout", "getData",
+  for (const name of ["getConfig", "getProgram", "register", "session", "login", "logout", "getData",
                       "saveSettings", "addRegistration", "updateRegistration",
                       "deleteRegistration", "saveTimetable"]) {
     api[name] = function () {

@@ -135,6 +135,8 @@ function defaultData(seed) {
       registrationKey: seed.registrationKey || "",
       eventStart: "",
       eventEnd: "",
+      /* タイムテーブルの一般公開フラグ。既定は非公開で、管理画面の「設定」で切り替える。 */
+      publicTimetable: false,
       types: normalizeTypes(DEFAULT_TYPES)
     },
     registrations: [],
@@ -159,6 +161,8 @@ function migrate(data, seed) {
     registrationKey: typeof s.registrationKey === "string" ? s.registrationKey : "",
     eventStart: period.eventStart,
     eventEnd: period.eventEnd,
+    // 公開フラグを持たない古いデータは非公開として読み込む（勝手に公開しない）
+    publicTimetable: s.publicTimetable === true,
     types: types && types.length
       ? types.map(t => ({
           id: typeof t.id === "string" && t.id ? t.id : randomUUID(),

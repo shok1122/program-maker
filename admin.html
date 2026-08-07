@@ -156,6 +156,8 @@
             <button class="btn ghost" id="tt-print">印刷 / PDF</button>
             <input type="file" id="tt-file" accept=".csv,text/csv" hidden>
             <span class="spacer"></span>
+            <a class="btn ghost small" id="tt-public-open" target="_blank" rel="noopener" hidden>公開ページ</a>
+            <span class="badge" id="tt-public-badge" hidden></span>
             <span class="saved-tag" id="tt-saved"></span>
           </div>
 
@@ -163,6 +165,7 @@
             CSVは「開始時刻・終了時刻」の列が無くても読み込めます（例：<code>発表種別,タイトル,発表者</code>）。
             その場合はCSVの行順のまま、基本設定の<b>開始時刻</b>から順に配置されます。
             <br>CSVの入出力と印刷 / PDFは、いま表示している<b>発表日</b>のぶんだけを対象にします。
+            <br>ここで組んだタイムテーブルは、<b>設定</b>タブの「タイムテーブルの公開」から一般公開できます（既定は非公開）。
           </div>
 
           <div class="notice" id="tt-notice"></div>
@@ -211,6 +214,24 @@
           </div>
 
           <div class="panel">
+            <h2>タイムテーブルの公開<span class="tail" id="st-public-tag"></span></h2>
+            <label class="inline-check" style="margin-bottom:14px">
+              <input type="checkbox" id="st-public"> タイムテーブルを一般公開する
+            </label>
+            <div class="field">
+              <label>公開ページ</label>
+              <input type="text" id="st-public-url" readonly>
+              <div class="hint">
+                公開すると、このURLを誰でも（ログインなしで）見られるようになります。
+                公開されるのは<b>いま保存されている下書き</b>（発表の時刻・タイトル・発表者・所属）です。
+                編集内容は自動保存されるので、公開中の変更はそのまま公開ページに反映されます。
+                <br>非公開のあいだは、URLを知っていても内容は返しません。
+              </div>
+            </div>
+            <a class="btn ghost small" id="st-public-open" target="_blank" rel="noopener" hidden>公開ページを開く</a>
+          </div>
+
+          <div class="panel">
             <h2>イベント情報</h2>
             <div class="field">
               <label for="st-event">イベント名</label>
@@ -252,6 +273,7 @@
 </div>
 
 <script src="assets/api.js"></script>
+<script src="assets/schedule.js"></script>
 <script src="assets/timetable.js"></script>
 <script src="assets/admin.js"></script>
 </body>

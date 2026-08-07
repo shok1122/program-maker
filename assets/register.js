@@ -58,6 +58,8 @@
   function applyConfig() {
     document.title = config.eventName + " 発表申込";
     $("#event-name").textContent = config.eventName;
+    // タイムテーブルを公開しているあいだは、プログラムへの導線も出す
+    $("#program-link").hidden = !config.timetablePublic;
 
     if (config.notice) {
       $("#event-notice").textContent = config.notice;

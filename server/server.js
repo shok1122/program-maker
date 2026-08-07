@@ -225,7 +225,50 @@ function publicConfig(settings) {
     notice: settings.notice,
     registrationOpen: settings.registrationOpen,
     keyRequired: !!settings.registrationKey,
+    timetablePublic: !!settings.publicTimetable,
     types: settings.types.map(t => ({ id: t.id, name: t.name, talk: t.talk, qa: t.qa }))
+  };
+}
+
+/* 下書きを持っている発表日。その日のタイムテーブルは下書きが正なので、
+   公開ページは登録一覧を見ない（発表日を持たなかったころの下書きは初日のもの）。 */
+function draftedDays(data) {
+  const t = data.timetable;
+  const out = new Set();
+  if (!t || typeof t !== "object") return out;
+  if (t.days && typeof t.days === "object" && !Array.isArray(t.days))
+    for (const k of Object.keys(t.days)) out.add(String(k));
+  else if (Array.isArray(t.talkList) || t.start)
+    out.add(eventDates(data.settings)[0] || "");
+  return out;
+}
+
+/* 一般公開ページ（/program）に渡す内容。公開フラグが立っていないあいだは
+   published: false だけを返し、タイムテーブルの中身は一切出さない。
+
+   タイムテーブルは管理画面が保存した下書きをそのまま渡す。下書きがまだ無い発表日は
+   公開ページが登録一覧から組み立てる（管理画面がその日を初めて開いたときと同じ状態）ので、
+   そのぶんの発表だけを添える。下書きがある発表日の登録は渡さない
+   ── 下書きから外した発表がAPI越しに見えてしまわないようにするため。
+   渡すのはプログラムに載る項目だけで、登録日時のような内部の情報は含めない。 */
+function programPayload(data) {
+  const s = data.settings;
+  if (!s.publicTimetable) return { published: false };
+  const drafted = draftedDays(data);
+  return {
+    published: true,
+    eventName: s.eventName,
+    eventStart: s.eventStart,
+    eventEnd: s.eventEnd,
+    types: s.types.map(t => ({ id: t.id, name: t.name, talk: t.talk, qa: t.qa,
+                               emphasis: t.emphasis === true })),
+    timetable: data.timetable,
+    registrations: data.registrations
+      .filter(r => !drafted.has(isoDate(r.date)))
+      .map(r => ({
+        typeId: r.typeId, typeName: r.typeName, title: r.title,
+        speaker: r.speaker, affiliation: r.affiliation, date: r.date
+      }))
   };
 }
 
@@ -267,6 +310,11 @@ async function handleApi(req, res, url) {
   if (top === "config" && seg.length === 1) {
     if (m !== "GET" && m !== "HEAD") return sendJson(res, 405, { error: "method not allowed" });
     return sendJson(res, 200, publicConfig(store.data.settings));
+  }
+
+  if (top === "program" && seg.length === 1) {
+    if (m !== "GET" && m !== "HEAD") return sendJson(res, 405, { error: "method not allowed" });
+    return sendJson(res, 200, programPayload(store.data));
   }
 
   if (top === "registrations" && seg.length === 1 && m === "POST") {
@@ -341,6 +389,7 @@ async function handleApi(req, res, url) {
       if ("notice" in inc) s.notice = text(inc.notice, LIMITS.notice);
       if ("registrationOpen" in inc) s.registrationOpen = !!inc.registrationOpen;
       if ("registrationKey" in inc) s.registrationKey = str(inc.registrationKey, LIMITS.key);
+      if ("publicTimetable" in inc) s.publicTimetable = !!inc.publicTimetable;
 
       if ("eventStart" in inc || "eventEnd" in inc) {
         const p = normalizePeriod("eventStart" in inc ? inc.eventStart : s.eventStart,
@@ -443,7 +492,8 @@ const MIME = {
   ".woff2": "font/woff2",
   ".txt": "text/plain; charset=utf-8"
 };
-const PUBLIC_FILES = new Set(["/index.html", "/admin.html", "/login.html", "/favicon.ico"]);
+const PUBLIC_FILES = new Set(["/index.html", "/admin.html", "/login.html", "/program.html",
+                              "/favicon.ico"]);
 
 /* URL を公開対象のファイルパスに変換する。対象外なら null。 */
 function resolveStatic(pathname) {
@@ -515,6 +565,11 @@ const server = http.createServer(async (req, res) => {
 
     if (req.method !== "GET" && req.method !== "HEAD")
       return send(res, 405, "Method Not Allowed", { "Content-Type": "text/plain; charset=utf-8", "Allow": "GET, HEAD" });
+
+    // タイムテーブルの一般公開ページ。中身は /api/program が公開フラグを見て決めるので、
+    // ページ自体は誰にでも返す（非公開のあいだは「公開していません」と表示される）。
+    if (url.pathname === "/program")
+      return await serveFile(req, res, path.join(ROOT, "program.html"), 200);
 
     const abs = resolveStatic(url.pathname);
     if (!abs) return send(res, 404, "Not Found", { "Content-Type": "text/plain; charset=utf-8" });

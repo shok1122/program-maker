@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>プログラム</title>
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/timetable.css">
+</head>
+<body>
+
+<div class="demo-bar" id="demo-bar">
+  <b>デモモード</b>
+  <span>サーバーに接続していないため、このブラウザ（localStorage）のデータを表示しています。</span>
+</div>
+
+<div class="wrap">
+
+  <header class="masthead">
+    <h1><span id="pg-event">プログラム</span> <span class="en">Program</span></h1>
+    <div class="summary" id="pg-summary"></div>
+    <div class="tools">
+      <button class="btn ghost small" id="pg-print">印刷 / PDF</button>
+    </div>
+  </header>
+
+  <div class="notice" id="notice"></div>
+
+  <div class="skeleton" id="loading">読み込み中…</div>
+
+  <div id="pg-shell" hidden>
+    <div class="tt-days" id="pg-days" hidden></div>
+    <div id="pg-boards"></div>
+    <div class="pg-foot" id="pg-foot"></div>
+  </div>
+
+</div>
+
+<script src="assets/api.js"></script>
+<script src="assets/schedule.js"></script>
+<script src="assets/program.js"></script>
+</body>
+</html>
