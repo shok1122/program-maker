@@ -261,10 +261,13 @@
     const dates = eventDates();
     document.title = (data.eventName || "プログラム") + " プログラム";
     $("#pg-event").textContent = data.eventName || "プログラム";
-    $("#pg-summary").innerHTML = dates.length
-      ? `<span>会期 <b>${TM.dateLabel(dates[0], true)}${
-          dates.length > 1 ? "–" + TM.dateLabel(dates[dates.length - 1]) : ""}</b></span>`
-      : "";
+    // class="ev" を付けたものは印刷にも出る（assets/timetable.css の @media print）
+    $("#pg-summary").innerHTML =
+      (dates.length
+        ? `<span class="ev">会期 <b>${TM.dateLabel(dates[0], true)}${
+            dates.length > 1 ? "–" + TM.dateLabel(dates[dates.length - 1]) : ""}</b></span>`
+        : "") +
+      (data.venue ? `<span class="ev">会場 <b>${esc(data.venue)}</b></span>` : "");
   }
 
   async function boot() {

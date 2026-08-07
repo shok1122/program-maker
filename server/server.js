@@ -42,7 +42,7 @@ const LOGIN_MAX_ATTEMPTS = 10;
 const LOGIN_WINDOW_MS = 15 * 60e3;
 
 const LIMITS = { title: 300, speaker: 200, affiliation: 200, key: 200,
-                 eventName: 120, notice: 2000, typeName: 60 };
+                 eventName: 120, venue: 200, notice: 2000, typeName: 60 };
 
 /* 管理者パスワードは平文では持たず、ハッシュ値だけを持つ（.htpasswd と同じ考え方）。
    ADMIN_PASSWORD_HASH … 設定に置くのはこれ。server/hash-password.js で作る。
@@ -291,6 +291,7 @@ function publicConfig(settings) {
   return {
     mode: "server",
     eventName: settings.eventName,
+    venue: settings.venue,
     notice: settings.notice,
     registrationOpen: settings.registrationOpen,
     keyRequired: !!settings.registrationKey,
@@ -327,6 +328,7 @@ function programPayload(data) {
   return {
     published: true,
     eventName: s.eventName,
+    venue: s.venue,
     eventStart: s.eventStart,
     eventEnd: s.eventEnd,
     types: s.types.map(t => ({ id: t.id, name: t.name, talk: t.talk, qa: t.qa,
@@ -497,6 +499,7 @@ async function handleApi(req, res, url) {
       const inc = body.settings && typeof body.settings === "object" ? body.settings : body;
 
       if ("eventName" in inc) s.eventName = str(inc.eventName, LIMITS.eventName) || "研究発表会";
+      if ("venue" in inc) s.venue = str(inc.venue, LIMITS.venue);
       if ("notice" in inc) s.notice = text(inc.notice, LIMITS.notice);
       if ("registrationOpen" in inc) s.registrationOpen = !!inc.registrationOpen;
       if ("registrationKey" in inc) s.registrationKey = str(inc.registrationKey, LIMITS.key);

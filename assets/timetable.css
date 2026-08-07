@@ -226,7 +226,10 @@ tr.row-emph .ro-title{font-weight:700}
   /* 閲覧モードの淡い表示は画面だけのもの。紙では通常どおり印刷する */
   body.ro .tabpanel{opacity:1}
   .masthead{border-color:#000}
-  .masthead .summary{display:none}
+  /* 会期・会場は配布物にも要るので印刷する（class="ev" を付けたものだけ）。
+     登録件数・受付状態・公開状態といった管理用の表示は紙には出さない。 */
+  .masthead .summary{color:#000}
+  .masthead .summary > :not(.ev){display:none}
   .board{border:none;border-radius:0}
   /* 画面用の横スクロールは紙では邪魔なので解除する */
   .board-scroll{overflow:visible}

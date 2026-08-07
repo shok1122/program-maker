@@ -130,6 +130,7 @@ function defaultData(seed) {
     version: VERSION,
     settings: {
       eventName: seed.eventName || "研究発表会",
+      venue: "",
       notice: "",
       registrationOpen: false,
       registrationKey: seed.registrationKey || "",
@@ -156,6 +157,8 @@ function migrate(data, seed) {
   const period = normalizePeriod(s.eventStart, s.eventEnd);
   const settings = {
     eventName: typeof s.eventName === "string" ? s.eventName : base.settings.eventName,
+    // 会場を持たない古いデータは空欄として読み込む
+    venue: typeof s.venue === "string" ? s.venue : "",
     notice: typeof s.notice === "string" ? s.notice : "",
     registrationOpen: s.registrationOpen === true,
     registrationKey: typeof s.registrationKey === "string" ? s.registrationKey : "",

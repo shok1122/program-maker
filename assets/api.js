@@ -29,7 +29,7 @@ window.TM = (function () {
     return err;
   }
   const LIMITS = { title: 300, speaker: 200, affiliation: 200, key: 200,
-                   eventName: 120, notice: 2000, typeName: 60 };
+                   eventName: 120, venue: 200, notice: 2000, typeName: 60 };
 
   function oneLine(v, max) {
     return String(v == null ? "" : v).replace(/\s+/g, " ").trim().slice(0, max);
@@ -112,6 +112,7 @@ window.TM = (function () {
     return {
       mode,
       eventName: settings.eventName,
+      venue: settings.venue || "",
       notice: settings.notice,
       registrationOpen: settings.registrationOpen,
       keyRequired: !!settings.registrationKey,
@@ -137,6 +138,7 @@ window.TM = (function () {
     return {
       published: true,
       eventName: s.eventName,
+      venue: s.venue || "",
       eventStart: s.eventStart || "",
       eventEnd: s.eventEnd || "",
       types: (s.types || []).map(t => ({ id: t.id, name: t.name, talk: t.talk, qa: t.qa,
@@ -237,6 +239,7 @@ window.TM = (function () {
       version: 1,
       settings: {
         eventName: "第12回 サンプル研究発表会",
+        venue: "サンプル大学 百年記念館 大ホール",
         notice: "発表申込は下記フォームからお願いします。1件ずつ登録してください。\n"
               + "内容の修正・取り消しは事務局までご連絡ください。",
         registrationOpen: true,
@@ -267,6 +270,7 @@ window.TM = (function () {
         if (d && d.settings && Array.isArray(d.registrations)) {
           // 公開フラグを持たないころのデモデータは、seed と同じ「公開」で始める
           if (typeof d.settings.publicTimetable !== "boolean") d.settings.publicTimetable = true;
+          if (typeof d.settings.venue !== "string") d.settings.venue = "";
           return d;
         }
       } catch (_) { /* 壊れていれば作り直す */ }
@@ -337,6 +341,7 @@ window.TM = (function () {
     saveSettings: settings => later(demoMutate(data => {
       const s = data.settings;
       if ("eventName" in settings) s.eventName = oneLine(settings.eventName, LIMITS.eventName) || "研究発表会";
+      if ("venue" in settings) s.venue = oneLine(settings.venue, LIMITS.venue);
       if ("notice" in settings) s.notice = multiLine(settings.notice, LIMITS.notice);
       if ("registrationOpen" in settings) s.registrationOpen = !!settings.registrationOpen;
       if ("registrationKey" in settings) s.registrationKey = oneLine(settings.registrationKey, LIMITS.key);

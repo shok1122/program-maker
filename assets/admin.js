@@ -268,12 +268,15 @@
     const dates = eventDates();
     $("#adm-event").textContent = s.eventName;
     document.title = s.eventName + " 管理画面";
+    // class="ev" を付けた会期・会場だけが印刷にも出る（assets/timetable.css の @media print）。
+    // 登録件数・受付状態などは管理用なので紙には出さない。
     $("#adm-summary").innerHTML =
       `<span>登録 <b>${state.registrations.length}</b> 件</span>` +
       (dates.length
-        ? `<span>会期 <b>${TM.dateLabel(dates[0], true)}${
+        ? `<span class="ev">会期 <b>${TM.dateLabel(dates[0], true)}${
             dates.length > 1 ? "–" + TM.dateLabel(dates[dates.length - 1]) : ""}</b></span>`
         : "") +
+      (s.venue ? `<span class="ev">会場 <b>${esc(s.venue)}</b></span>` : "") +
       `<span>受付 <b>${s.registrationOpen ? "受付中" : "停止"}</b></span>` +
       `<span>キー <b>${s.registrationKey ? "設定あり" : "なし"}</b></span>` +
       `<span>公開 <b>${s.publicTimetable ? "公開中" : "非公開"}</b></span>`;
@@ -622,6 +625,7 @@
     $("#st-date-start").value = s.eventStart || "";
     $("#st-date-end").value = s.eventEnd || "";
     renderDateHint();
+    $("#st-venue").value = s.venue || "";
     $("#st-notice").value = s.notice || "";
     $("#st-url").value = new URL("index.html", location.href).href;
     $("#st-public").checked = !!s.publicTimetable;
@@ -700,6 +704,7 @@
     try {
       const res = await TM.saveSettings({
         eventName: $("#st-event").value,
+        venue: $("#st-venue").value,
         notice: $("#st-notice").value,
         registrationOpen: $("#st-open").checked,
         registrationKey: $("#st-key").value,

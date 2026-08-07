@@ -58,6 +58,9 @@
   function applyConfig() {
     document.title = config.eventName + " 発表申込";
     $("#event-name").textContent = config.eventName;
+    // 会場は設定されているときだけ出す
+    $("#event-meta").innerHTML = config.venue
+      ? `<span>会場 <b>${esc(config.venue)}</b></span>` : "";
     // タイムテーブルを公開しているあいだは、プログラムへの導線も出す
     $("#program-link").hidden = !config.timetablePublic;
 
