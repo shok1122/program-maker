@@ -8,12 +8,11 @@
 **デモ（パスワード不要・データはブラウザ内のみ）**
 https://shok1122.github.io/program-maker/
 
-## とりあえず動かす
+## 動かし方
 
 ```bash
 cp .env.example .env
 make password           # 管理者パスワードを決める → 出た1行を .env に貼り付ける（必須）
-vi config/types.json    # 発表種別（名称・発表時間・質疑応答時間）を用意する
 make build && make up   # docker compose build → up -d
 ```
 
@@ -25,38 +24,24 @@ make build && make up   # docker compose build → up -d
 
 使い方の流れは次の3ステップです。
 
-1. **設定**タブで受付を開始する（イベント名・会期・案内文・参加登録キーもここ）
+1. **設定**タブで**発表種別**（名称・発表時間・質疑応答時間）を用意して、受付を開始する
+   （イベント名・会期・案内文・参加登録キーもここ）
 2. 発表者に参加登録ページのURLを配り、**登録一覧**タブで申込を確認する（複数日開催なら各申込に**発表日**を割り当てる）
 3. **タイムテーブル**タブで「登録一覧から読み込む」→ 開始時刻・休憩を設定 → 並べ替え → 印刷 / PDF
    （複数日開催なら、読み込みは全日まとめて1回。時間割の調整と印刷は発表日ごとに行う）
 
 止めるときは `make down`、データも消すときは `make down && make clean` です。
 
-## とりあえず HTTPS で動かす
+### HTTPS で動かす（Let's Encrypt）
 
 ドメイン名があるなら、[Caddy](https://caddyserver.com/) を一緒に起動して
 **Let's Encrypt のサーバ証明書を自動で取得・自動で更新**できます（certbot も cron も要りません）。
-前提は、サーバの **80番と443番**がインターネットから到達できることと、
-使うドメインの **DNS（A / AAAA レコード）がこのサーバを向いている**ことの2つです。
+設定は [`Caddyfile`](Caddyfile) にあります。前提は、サーバの **80番と443番**がインターネットから
+到達できることと、使うドメインの **DNS（A / AAAA レコード）がこのサーバを向いている**ことの2つです。
 
-```bash
-cp .env.example .env
-make password           # 管理者パスワードを決める → 出た1行を .env に貼り付ける（必須）
-vi config/types.json    # 発表種別（名称・発表時間・質疑応答時間）を用意する
-```
-
-続けて `.env` を開き、次の5つの項目を書き換えます。どれも `.env.example` に用意されているので、
-行を足すのではなく `=` の右側を書き換えてください。
-
-```bash
-SITE_ADDRESS=program.example.ac.jp   # 証明書を取得するドメイン名（既定は空）
-ACME_EMAIL=admin@example.ac.jp       # Let's Encrypt に登録するメールアドレス（既定は空）
-COOKIE_SECURE=1                      # Cookie に Secure を付ける（既定は 0）
-TRUST_PROXY=1                        # 接続元をプロキシ経由で判定する（既定は 0）
-HOST_BIND=127.0.0.1                  # 平文の 8080 番を外に出さない（既定は 0.0.0.0）
-```
-
-ここまで済んだら起動します。
+準備は上と同じです。`cp .env.example .env` → `make password` まで済ませてください。
+そのうえで `.env` の **`HTTPS で公開する場合（make up-https）`** のコメントに従って書き換えます
+（必要な項目とその理由はすべて `.env` に書いてあります）。
 
 ```bash
 make build && make up-https
@@ -66,29 +51,23 @@ make logs-https         # certificate obtained successfully が出れば完了
 - 参加登録ページ … `https://program.example.ac.jp/` ← 発表者に配るURL
 - 管理画面 … `https://program.example.ac.jp/admin` ← `make password` で決めたパスワードでログイン
 
-HTTP でのアクセスは Caddy が HTTPS へリダイレクトします。使い方の流れと止め方は
-[とりあえず動かす](#とりあえず動かす)と同じです。
+HTTP でのアクセスは Caddy が HTTPS へリダイレクトします。使い方の流れと止め方は上と同じです。
 
 > [!TIP]
-> 設定を試している間は `.env` の `ACME_CA` をステージング環境に向けてください。
-> 本番の Let's Encrypt には**1ドメインあたり週50回**の発行上限があります。
-> 証明書が取れないときや別のリバースプロキシ（nginx など）を使う場合は
-> [HTTPS で公開する（Let's Encrypt）](#https-で公開するlets-encrypt)を見てください。
+> 設定を試している間は `.env` の `ACME_CA` をステージング環境に向けてください
+> （[Let's Encrypt の発行上限](#lets-encrypt-の発行上限)）。
+> 取れないときは[証明書が取れないとき](#証明書が取れないとき)を見てください。
 
-### ドメイン名が無い場合（オレオレ証明書）
+### HTTPS で動かす（オレオレ証明書）
 
 学内LANだけで使う、公開できるドメイン名が無い、80番が塞がれていて Let's Encrypt が使えない、
-という場合は**オレオレ証明書**（自己署名証明書）で HTTPS にできます。証明書は Caddy が自前のCAで
-発行するので、DNS の設定も 80番の開放も要りません。
+という場合は**オレオレ証明書**（自己署名証明書）で HTTPS にできます。証明書は Caddy が自前のCA
+（Caddy Local Authority）で発行するので、DNS の設定も 80番の開放も、openssl での作成・更新も要りません。
+設定は [`Caddyfile.selfsigned`](Caddyfile.selfsigned) にあります。
 
-`.env` を書き換えるのは次の4つです（`ACME_EMAIL` と `ACME_CA` は使いません）。
-
-```bash
-SITE_ADDRESS=192.168.1.10, localhost   # ブラウザで使うホスト名 / IPアドレスを全部（カンマ区切り）
-COOKIE_SECURE=1                        # Cookie に Secure を付ける（既定は 0）
-TRUST_PROXY=1                          # 接続元をプロキシ経由で判定する（既定は 0）
-HOST_BIND=127.0.0.1                    # 平文の 8080番を外に出さない（既定は 0.0.0.0）
-```
+`.env` は **`オレオレ証明書で HTTPS にする場合（make up-https-selfsigned）`** のコメントに従って
+書き換えます。`SITE_ADDRESS` には**ブラウザで実際に使う名前をすべて**書いてください
+（[`SITE_ADDRESS` に書く名前](#site_address-に書く名前)）。
 
 ```bash
 make build && make up-https-selfsigned
@@ -100,7 +79,7 @@ make ca-cert            # CAの証明書を ./ca.crt に取り出す（任意）
 
 ブラウザが知らないCAの証明書なので初回は警告が出ますが、承諾すればそのまま使えます。
 `ca.crt` を見る側の端末に入れておけば警告は出なくなります
-（[HTTPS で公開する（オレオレ証明書）](#https-で公開するオレオレ証明書)）。
+（[CAの証明書を端末に入れる](#caの証明書を端末に入れる)）。
 
 ## 画面構成
 
@@ -149,14 +128,12 @@ CSVエクスポート（`発表種別,発表日,タイトル,発表者,所属,�
 チェックした発表日それぞれに、その日の申込が読み込まれます（発表日が未定の申込は「日付未定」へ）。
 置き換わるのは**発表とその並び順だけ**で、開始時刻・ランチ・休憩はその日の設定のまま残ります。
 
-- 発表日ごとの表示（会期が複数日のとき。それぞれ独立した基本設定・休憩・並び順を持ちます）
-- 登録一覧の読み込みは、対象の発表日を**チェックボックスで複数選択**（すべて選択／すべて解除つき）
+読み込んだあとは、この画面で時間割を組み立てます。できることは次のとおりです。
+
 - 開始時刻の指定（終了時刻は発表の件数と固定枠から自動で決まります）
-- **発表種別を複数定義**（名称・発表時間・質疑応答時間・件数、1コマ = 発表 + 質疑）
-  - 種別ごとに色分けして表示
-  - **強調**を指定した種別（基調講演・授賞式など）は行に背景色が付き、印刷にも反映されます
+- 発表種別ごとに**色分け**して表示（左パネルに名称・発表時間・質疑応答時間・件数が並びます）
 - ランチ枠の開始・終了指定
-- **休憩**を時間帯で自由に定義（いくつでも追加できます）
+- **休憩**を時間帯で自由に定義
 - 発表順序の**手動並べ替え**（表の行をドラッグ＆ドロップ、または ▲▼ ボタン）
   - 種別をまたいで自由に入れ替え可能。時刻は種別ごとのコマ長に応じて自動で振り直されます
 - 発表タイトル・発表者を表内で直接編集
@@ -165,8 +142,8 @@ CSVエクスポート（`発表種別,発表日,タイトル,発表者,所属,�
 - 編集内容は**下書きとして自動保存**され、次に開いたときに復元されます
 
 **設定**
-受付の開始／停止、参加登録キー、イベント名、**会期**、参加登録ページに表示する案内文、
-そして**種別**（参加登録ページのドロップダウンの中身）を編集できます。
+受付の開始／停止、参加登録キー、イベント名、会期、参加登録ページに表示する案内文、
+種別などを編集できます。
 
 **会期**は開始日と終了日で指定します（終了日を空欄にすると1日開催、最大60日）。
 指定すると登録一覧で**発表日**を選べるようになり、タイムテーブルを発表日ごとに作れます。
@@ -178,19 +155,11 @@ CSVエクスポート（`発表種別,発表日,タイトル,発表者,所属,�
 種別の発表時間・質疑応答時間は、そのままタイムテーブルのコマ長として使われます
 （ポスター発表など時間を割り当てない種別は0分でも構いません）。
 種別名を変更すると、既存の登録の表示名にも反映されます。
-種別は起動前に `config/types.json` でまとめて用意することもできます（[発表種別のカスタマイズ](#発表種別のカスタマイズconfigtypesjson)）。
+種別は起動前に `config/types.json` でまとめて用意することもできます（[発表種別の事前定義](#発表種別の事前定義configtypesjson)）。
 
-## 本番環境（Docker）
+## Tips
 
-```bash
-cp .env.example .env
-make password   # 出力された ADMIN_PASSWORD_HASH=... の行を .env に貼り付けてください（後述）
-# config/types.json に発表種別を書いてください（後述）
-docker compose up -d --build
-```
-
-`http://localhost:8080/` が参加登録ページ、`http://localhost:8080/admin` が管理画面です。
-データは名前付きボリューム `program-data` の `/data/registrations.json` に保存されます。
+[動かし方](#動かし方)に出てこない細かい話を、項目ごとにまとめます。必要になったところだけ読んでください。
 
 ### 管理者パスワード
 
@@ -210,125 +179,21 @@ ADMIN_PASSWORD_HASH=scrypt:ln=14,r=8,p=1:iNCcJ1w9SM9DJ3ru0dQzGA:9tvSbxaMd0kwuzUm
 - ハッシュは scrypt（ソルト付き・`N=2^14, r=8, p=1`）で、照合は定数時間で行います。
   ソルトは毎回変わるので、同じパスワードでも出力は毎回違います。
 - ハッシュ値から元のパスワードは分かりません。忘れたときは作り直してください。
-- Node.js が入っていない環境では、`make password` がコンテナ（`node:22-alpine`）の中で実行します
-  （イメージのビルドは不要）。直接動かす場合は `node server/hash-password.js` です。
-- 自動化するときは引数やパイプでも渡せます。シェルの履歴に残る点にはご注意ください。
+- `ADMIN_PASSWORD`（平文）も当面は受け付けますが、起動時に警告が出ます。
+  `ADMIN_PASSWORD_HASH` を設定して `ADMIN_PASSWORD` は削除してください。
 
-  ```bash
-  node server/hash-password.js 'パスワード'
-  ```
+### データの保存先とバックアップ
 
-`ADMIN_PASSWORD`（平文）も当面は受け付けますが、起動時に警告が出ます。
-`ADMIN_PASSWORD_HASH` を設定して `ADMIN_PASSWORD` は削除してください。
-
-### HTTPS で公開する（Let's Encrypt）
-
-インターネットに公開する場合は、リバースプロキシの [Caddy](https://caddyserver.com/) を一緒に起動すると
-**Let's Encrypt のサーバ証明書を自動で取得し、期限が近づくたびに自動で更新**します。
-cron も certbot の実行も要りません。設定は [`Caddyfile`](Caddyfile) にあります。
-
-前提は次の2つです。
-
-- サーバの **80番と443番** がインターネットから到達できる（HTTP-01 チャレンジに80番を使います）
-- 使うドメインの DNS（A / AAAA レコード）が**このサーバを向いている**
-
-`.env` を次のように設定して、`make up-https` で起動します。
+データは名前付きボリューム `program-data` の `/data/registrations.json` に保存されます。
+JSONファイル1つなので、バックアップはコピーするだけです。
 
 ```bash
-# .env
-SITE_ADDRESS=program.example.ac.jp   # 証明書を取得するドメイン名
-ACME_EMAIL=admin@example.ac.jp       # Let's Encrypt のアカウントに登録するメールアドレス
-COOKIE_SECURE=1                      # Cookie に Secure を付ける
-TRUST_PROXY=1                        # 接続元をプロキシ経由で判定する
-HOST_BIND=127.0.0.1                  # 平文の 8080 番を外に出さない
+docker compose exec program-maker cat /data/registrations.json > backup.json
 ```
 
-```bash
-make up-https      # docker compose --profile https up -d
-make logs-https    # 証明書が取れたかを追う
-```
+書き込みは一時ファイル経由の原子的な置き換えで行い、直前の状態を `registrations.json.bak` に残します。
 
-`certificate obtained successfully` がログに出れば完了です。以後 `https://program.example.ac.jp/` が
-参加登録ページ、`https://program.example.ac.jp/admin` が管理画面になります。
-HTTP でのアクセスは Caddy が HTTPS へリダイレクトします。
-
-- `make up-https` を使わない `make up` は今までどおり平文の HTTP のままです。Caddy は起動しません。
-- 取得した証明書と秘密鍵は `caddy-data` ボリュームに残ります。`make down` して起動し直しても取り直しにはなりません。
-- 動作確認のうちは `.env` の `ACME_CA` でステージング環境に向けてください。本番の Let's Encrypt には
-  **1ドメインあたり週50回**の発行上限があり、設定を直しながら試すと使い切ってしまいます。
-  本番に切り替えるときは `ACME_CA` をコメントに戻し、`docker volume rm program-maker_caddy-data` で
-  テスト用の証明書を捨ててから起動し直してください。
-- `TRUST_PROXY=1` にしても、ログイン試行回数の制限を接続元の詐称で迂回されることはありません。
-  Caddy は信頼していない接続元から届いた `X-Forwarded-For` を実際の接続元で上書きするためです。
-- 証明書が取れないときは `make logs-https` を見てください。80番が塞がれている（大学のネットワークなど）、
-  DNS がまだ伝わっていない、といった原因が大半です。80番を開けられない場合は HTTP-01 が使えないので、
-  DNS-01 チャレンジに対応した Caddy イメージを別途ビルドする必要があります。
-- 別のリバースプロキシ（nginx など）が既にある場合は、Caddy を使わずに `HOST_BIND=127.0.0.1` で
-  8080番を localhost に閉じ、そのプロキシから転送してください。`COOKIE_SECURE=1` と `TRUST_PROXY=1` は同じく必要です。
-
-### HTTPS で公開する（オレオレ証明書）
-
-公開できるドメイン名が無い場合や、80番が塞がれていて Let's Encrypt の HTTP-01 チャレンジが通らない場合は、
-**オレオレ証明書**（自己署名証明書）で HTTPS にできます。設定は
-[`Caddyfile.selfsigned`](Caddyfile.selfsigned) にあります。
-
-Caddy が自前のCA（Caddy Local Authority）を作り、そこから公開先の証明書を発行します。
-openssl で証明書を作る作業も、期限が切れるたびに作り直す作業も要りません。
-
-```bash
-# .env
-SITE_ADDRESS=192.168.1.10, program.example.local, localhost   # ブラウザで使う名前をすべて
-COOKIE_SECURE=1                      # Cookie に Secure を付ける
-TRUST_PROXY=1                        # 接続元をプロキシ経由で判定する
-HOST_BIND=127.0.0.1                  # 平文の 8080番を外に出さない
-```
-
-```bash
-make up-https-selfsigned   # 80/443番を使います
-make logs-https            # certificate obtained successfully ... "issuer":"local" が出れば完了
-```
-
-要点は、`SITE_ADDRESS` に**ブラウザで実際に使う名前をすべて**書くことです。ここに無い名前で繋ぐと
-証明書が見つからず、`ERR_SSL_UNRECOGNIZED_NAME_ALERT` などになって接続できません
-（書き足して `make up-https-selfsigned` をやり直せば直ります）。
-
-#### 証明書の警告を消す（任意）
-
-そのままでもブラウザの警告を承諾すれば使えますが、CAの証明書を見る側の端末に入れておけば警告は出ません。
-発表者に配るURLなら、入れておいたほうが「危険なサイト」と思われずに済みます。
-
-```bash
-make ca-cert    # ./ca.crt に CA の証明書（公開鍵側）が出る。秘密鍵は含まれません
-```
-
-| 端末 | 入れ方 |
-| --- | --- |
-| Windows | `ca.crt` をダブルクリック →「証明書のインストール」→ 保存場所は**ローカルコンピューター** →「信頼されたルート証明機関」を選ぶ |
-| macOS | キーチェーンアクセスの「システム」にドラッグ → 開いて「この証明書を使用するとき」を**常に信頼**にする |
-| Linux | `sudo cp ca.crt /usr/local/share/ca-certificates/program-maker.crt && sudo update-ca-certificates` |
-| Firefox | OS の設定を見ないので別途、設定 → プライバシーとセキュリティ → 証明書を表示 → 認証局証明書に**インポート** |
-| iOS | `ca.crt` を送って開く → プロファイルをインストール → 設定 → 一般 → 情報 → **証明書信頼設定**で有効にする |
-| Android | 設定 → セキュリティ → 暗号化と認証情報 → 証明書のインストール → **CA証明書** |
-
-その他の注意点は次のとおりです。
-
-- `make up-https`（Let's Encrypt）とは**同時に起動できません**。どちらも 80/443番を使うので、
-  切り替えるときは `make down` してから起動し直してください。
-- CAの鍵と証明書は `caddy-data` ボリュームに残ります。`docker volume rm program-maker_caddy-data` で
-  消すとCAごと作り直しになるので、端末に入れた `ca.crt` も入れ直しになります。
-- サーバ証明書の有効期間は12時間で、Caddy が期限前に自動で発行し直します（CAの証明書は10年）。
-  止めている間に切れても起動時に作り直すので、更新の手当ては要りません。
-- **IPアドレスで見せる場合**: ブラウザは接続先がIPアドレスだと名前（SNI）を送らないため、Caddy は
-  どの証明書を返すか決められません。`make up-https-selfsigned` は `SITE_ADDRESS` の**先頭**を
-  `DEFAULT_SNI` として渡し、これを名前が分からないときの証明書にします。IPアドレスで見せるなら
-  先頭にIPアドレスを書くか、`.env` の `DEFAULT_SNI` で明示してください。
-- 通信の暗号化はできますが、**相手が本物かの確認はCAを端末に入れないとできません**。警告を承諾する運用は、
-  経路上で偽のサーバに差し替えられても気付けないということです。インターネットに公開するなら
-  [Let's Encrypt](#https-で公開するlets-encrypt) を使ってください。
-- `make` を使わず `docker compose` を直に叩く場合は、`.env` に `CADDYFILE=./Caddyfile.selfsigned` と
-  `DEFAULT_SNI`（IPアドレスで見せる場合）を書いてください。`make up-https-selfsigned` はこの2つを自動で渡します。
-
-### 発表種別のカスタマイズ（`config/types.json`）
+### 発表種別の事前定義（`config/types.json`）
 
 参加登録ページのドロップダウンに並ぶ**発表種別**は、コンテナを起動する前に
 `config/types.json` を書き換えて用意できます。
@@ -357,7 +222,7 @@ make ca-cert    # ./ca.crt に CA の証明書（公開鍵側）が出る。秘�
 
 ```bash
 vi config/types.json
-docker compose restart
+make restart
 ```
 
 反映の規則は次のとおりです。
@@ -388,35 +253,96 @@ docker compose restart
 | `EVENT_NAME` | `研究発表会` | イベント名の初期値（初回起動時のみ） |
 | `TYPES_FILE` | `./config/types.json` | 発表種別の定義ファイル。内容を変えて再起動すると反映されます |
 | `PORT` / `HOST` | `8080` / `0.0.0.0` | 待ち受け先 |
-| `DATA_DIR` | `/data`（Docker）、`./data`（直接実行） | JSON の保存先 |
+| `DATA_DIR` | `/data` | JSON の保存先（コンテナ内） |
 | `COOKIE_SECURE` | `0` | HTTPS で公開する場合は `1`（Cookie に `Secure` を付けます） |
 | `SESSION_HOURS` | `12` | ログインの有効時間 |
 | `TRUST_PROXY` | `0` | リバースプロキシ配下でログイン試行回数を接続元ごとに数えたい場合は `1` |
 | `HOST_PORT` / `HOST_BIND` | `8080` / `0.0.0.0` | ホスト側の公開先（docker compose のみ）。HTTPS で公開するなら `HOST_BIND=127.0.0.1` |
-| `SITE_ADDRESS` | 空 | 証明書を出す公開先（`make up-https` / `make up-https-selfsigned` のとき必須）。[オレオレ証明書](#https-で公開するオレオレ証明書)ならホスト名・IPアドレスをカンマ区切りで並べられます |
+| `SITE_ADDRESS` | 空 | 証明書を出す公開先（`make up-https` / `make up-https-selfsigned` のとき必須）。[オレオレ証明書](#https-で動かすオレオレ証明書)ならホスト名・IPアドレスをカンマ区切りで並べられます |
 | `ACME_EMAIL` | 空 | Let's Encrypt のアカウントに登録するメールアドレス（`make up-https` のとき必須） |
 | `ACME_CA` | Let's Encrypt 本番 | ACME サーバー。動作確認中はステージング環境に向けます |
-| `DEFAULT_SNI` | 空（`SITE_ADDRESS` の先頭） | IPアドレスで繋がれたときに返す証明書。[オレオレ証明書](#https-で公開するオレオレ証明書)のときだけ使います |
+| `DEFAULT_SNI` | 空（`SITE_ADDRESS` の先頭） | IPアドレスで繋がれたときに返す証明書。[オレオレ証明書](#https-で動かすオレオレ証明書)のときだけ使います |
 | `CADDYFILE` | `./Caddyfile` | リバースプロキシの設定ファイル。`make up-https-selfsigned` は `./Caddyfile.selfsigned` を渡します |
 
-### バックアップ
+### Let's Encrypt の発行上限
 
-保存先は JSON ファイル1つなので、コピーするだけで済みます。
+本番の Let's Encrypt には**1ドメインあたり週50回**の発行上限があり、設定を直しながら試すと使い切ってしまいます。
+動作確認のうちは `.env` の `ACME_CA` でステージング環境に向けてください。
+本番に切り替えるときは `ACME_CA` をコメントに戻し、`docker volume rm program-maker_caddy-data` で
+テスト用の証明書を捨ててから起動し直します。
+
+### 証明書が取れないとき
+
+`make logs-https` を見てください。80番が塞がれている（大学のネットワークなど）、
+DNS がまだ伝わっていない、といった原因が大半です。
+80番を開けられない場合は HTTP-01 チャレンジが使えないので、DNS-01 チャレンジに対応した
+Caddy イメージを別途ビルドするか、[オレオレ証明書](#https-で動かすオレオレ証明書)に切り替えてください。
+
+### 証明書の保存先と更新
+
+- 証明書と秘密鍵（オレオレ証明書ならCAの鍵も）は `caddy-data` ボリュームに残ります。
+  `make down` して起動し直しても取り直しにはなりません。
+- `docker volume rm program-maker_caddy-data` で消すと、Let's Encrypt は取り直し、
+  オレオレ証明書はCAごと作り直しになります（端末に入れた `ca.crt` も入れ直しです）。
+- オレオレ証明書のサーバ証明書は有効期間12時間で、Caddy が期限前に自動で発行し直します
+  （CAの証明書は10年）。止めている間に切れても起動時に作り直すので、更新の手当ては要りません。
+
+### `SITE_ADDRESS` に書く名前
+
+オレオレ証明書のときは、`SITE_ADDRESS` に**ブラウザで実際に使う名前をすべて**カンマ区切りで書きます。
+ここに無い名前で繋ぐと証明書が見つからず、`ERR_SSL_UNRECOGNIZED_NAME_ALERT` などになって接続できません
+（書き足して `make up-https-selfsigned` をやり直せば直ります）。
+
+### IPアドレスで見せる場合（`DEFAULT_SNI`）
+
+ブラウザは接続先がIPアドレスだと名前（SNI）を送らないため、Caddy はどの証明書を返すか決められません。
+`make up-https-selfsigned` は `SITE_ADDRESS` の**先頭**を `DEFAULT_SNI` として渡し、
+これを名前が分からないときの証明書にします。
+IPアドレスで見せるなら先頭にIPアドレスを書くか、`.env` の `DEFAULT_SNI` で明示してください。
+
+### CAの証明書を端末に入れる
+
+オレオレ証明書はそのままでもブラウザの警告を承諾すれば使えますが、CAの証明書を見る側の端末に
+入れておけば警告は出ません。発表者に配るURLなら、入れておいたほうが「危険なサイト」と思われずに済みます。
 
 ```bash
-docker compose exec program-maker cat /data/registrations.json > backup.json
+make ca-cert    # ./ca.crt に CA の証明書（公開鍵側）が出る。秘密鍵は含まれません
 ```
 
-書き込みは一時ファイル経由の原子的な置き換えで行い、直前の状態を `registrations.json.bak` に残します。
+| 端末 | 入れ方 |
+| --- | --- |
+| Windows | `ca.crt` をダブルクリック →「証明書のインストール」→ 保存場所は**ローカルコンピューター** →「信頼されたルート証明機関」を選ぶ |
+| macOS | キーチェーンアクセスの「システム」にドラッグ → 開いて「この証明書を使用するとき」を**常に信頼**にする |
+| Linux | `sudo cp ca.crt /usr/local/share/ca-certificates/program-maker.crt && sudo update-ca-certificates` |
+| Firefox | OS の設定を見ないので別途、設定 → プライバシーとセキュリティ → 証明書を表示 → 認証局証明書に**インポート** |
+| iOS | `ca.crt` を送って開く → プロファイルをインストール → 設定 → 一般 → 情報 → **証明書信頼設定**で有効にする |
+| Android | 設定 → セキュリティ → 暗号化と認証情報 → 証明書のインストール → **CA証明書** |
 
-### Docker を使わない場合
+オレオレ証明書でできるのは通信の暗号化までで、**相手が本物かの確認はCAを端末に入れないとできません**。
+警告を承諾する運用は、経路上で偽のサーバに差し替えられても気付けないということです。
+インターネットに公開するなら [Let's Encrypt](#https-で動かすlets-encrypt) を使ってください。
 
-```bash
-node server/hash-password.js            # ADMIN_PASSWORD_HASH=... が出る
-ADMIN_PASSWORD_HASH=scrypt:... node server/server.js
-```
+### 2つの HTTPS は同時に起動できない
 
-Node.js 22 以降で、追加パッケージのインストールは不要です。
+`make up-https`（Let's Encrypt）と `make up-https-selfsigned`（オレオレ証明書）はどちらも 80/443番を使います。
+切り替えるときは `make down` してから起動し直してください。
+
+### 別のリバースプロキシを使う（nginx など）
+
+既にリバースプロキシがある場合は Caddy を使わず、`HOST_BIND=127.0.0.1` で8080番を localhost に閉じて
+そのプロキシから転送してください。`COOKIE_SECURE=1` と `TRUST_PROXY=1` は同じく必要です。
+Caddy を起動しない `make up` は、今までどおり平文の HTTP のままです。
+
+### `X-Forwarded-For` の扱い
+
+`TRUST_PROXY=1` にしても、ログイン試行回数の制限を接続元の詐称で迂回されることはありません。
+Caddy は信頼していない接続元から届いた `X-Forwarded-For` を実際の接続元で上書きするためです。
+
+### `docker compose` を直に使う
+
+`make` を使わず `docker compose` を直に叩く場合、オレオレ証明書では `.env` に
+`CADDYFILE=./Caddyfile.selfsigned` と `DEFAULT_SNI`（IPアドレスで見せる場合）を書いてください。
+`make up-https-selfsigned` はこの2つを自動で渡します。
 
 ## 認証について
 
@@ -427,8 +353,8 @@ Node.js 22 以降で、追加パッケージのインストールは不要です
 - パスワードは平文では保持せず、`.htpasswd` と同じくハッシュ値（ソルト付き scrypt）だけを設定に置きます
   （[管理者パスワード](#管理者パスワード)）。
 - 単一の共有パスワードによる簡易的な保護です。インターネットに公開する場合はHTTPS（`COOKIE_SECURE=1`）を前提にしてください
-  （[Let's Encrypt](#https-で公開するlets-encrypt) での手順があります。学内LANだけで使うなら
-  [オレオレ証明書](#https-で公開するオレオレ証明書)でも構いません）。
+  （[Let's Encrypt](#https-で動かすlets-encrypt) での手順があります。学内LANだけで使うなら
+  [オレオレ証明書](#https-で動かすオレオレ証明書)でも構いません）。
 
 ## デモ（GitHub Pages）
 
@@ -492,9 +418,9 @@ Dockerfile / docker-compose.yml / .env.example
 
 発表種別ごとのコマ長は次の順で決まります。
 
-1. 同名の発表種別が左パネルに定義済みなら、その**発表＋質疑の内訳をそのまま使用**
+1. 同名の発表種別が既に定義済みなら、その**発表＋質疑の内訳をそのまま使用**
 2. CSVに時刻があればその長さ（内訳は同じ長さの既存種別から推定、無ければ質疑0分）
-3. どちらも無ければ既存の定義から仮置き（通知に表示されます。左パネルで調整してください）
+3. どちらも無ければ既存の定義から仮置き（通知に表示されます。「設定」タブで調整してください）
 
 見出し行が無く時刻の列も無いCSVは、`発表種別,タイトル,発表者` の順とみなして読み込みます。
 
